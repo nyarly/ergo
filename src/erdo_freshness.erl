@@ -33,6 +33,7 @@ store(Task, Root, Deps, Prods) ->
           })
     end).
 
+-spec(check(erdo:taskname(), file:name_all(), [file:name_all()]) -> hit | miss).
 check(Task, Root, Deps) ->
   case mnesia:transaction(fun() ->
           mnesia:match_object(#erdo_task_cache{
