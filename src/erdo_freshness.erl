@@ -14,10 +14,6 @@
 %% @end
 -spec(start() -> {ok,pid()}).
 start() ->
-  ok = create_schema(),
-  ok = start_mnesia(),
-  ok = create_tables(),
-  ok = mnesia:wait_for_tables([erdo_task_cache, erdo_cached_digest], 10000),
   ok.
 
 file_digest(Root, Path) ->
@@ -59,32 +55,10 @@ check_products(Root, CacheMatch) ->
     _ -> miss
   end.
 
-
-create_schema() ->
-  case mnesia:create_schema([node()]) of
-    ok -> ok;
-    {error, {_Node, {already_exists, _Node}}} -> ok;
-    Error -> Error
-  end.
-
-start_mnesia() ->
-  mnesia:start().
-
 create_tables() ->
-  ok = create_table(erdo_task_cache, bag, record_info(fields, erdo_task_cache)),
-  ok = create_table(erdo_cached_digest, set, record_info(fields, erdo_cached_digest)),
-  ok.
-
-create_table(Name, Type, Attrs) ->
-  case mnesia:create_table(Name,
-      [ {attributes, Attrs},
-        {type, Type},
-        {disc_copies, [node()]}
-      ]) of
-    {atomic, ok} -> ok;
-    {aborted, {already_exists, Name}} -> ok;
-    Error -> Error
-  end.
+  ok = erdo_storage:create_table(erdo_task_cache, bag, record_info(fields, erdo_task_cache)),
+  ok = erdo_storage:create_table(erdo_cached_digest, set, record_info(fields, erdo_cached_digest)),
+  [erdo_task_cache, erdo_cached_digest].
 
 digest_file(Root, Path) ->
   {ok, Io, _FullName} = file:path_open([Root], Path, [read, raw, binary]),

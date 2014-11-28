@@ -8,7 +8,7 @@
 -export([init/1, handle_event/2, handle_call/2,
   handle_info/2, terminate/2, code_change/3]).
 
--record(state, {requested_targets, build_spec, complete_tasks, run_counts}).
+-record(state, {requested_targets, build_spec, project_dir, complete_tasks, run_counts}).
 -define(RUN_LIMIT,20).
 
 %%%===================================================================
@@ -33,13 +33,14 @@ add_to_sup(Server, Args) ->
 %%%===================================================================
 %%% gen_event callbacks
 %%%===================================================================
-init(Targets) ->
+init({Targets, ProjectDir}) ->
   BuildSpec=erdo_graphs:build_spec(Targets),
-  start_tasks(BuildSpec, [], dict:new()),
+  start_tasks(ProjectDir, BuildSpec, [], dict:new()),
   {ok, #state{
       requested_targets=Targets,
       complete_tasks=[],
       build_spec=BuildSpec,
+      project_dir=ProjectDir,
       run_counts=dict:new()
     }
   }.
@@ -69,16 +70,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% Internal functions
 
-task_completed(Task, State = #state{build_spec=BuildSpec, complete_tasks=PrevCompleteTasks}) ->
+-spec(task_executable([file:name_all()], binary()) -> file:name_all()).
+task_executable(TaskPath, Taskname) ->
+  file:path_open(TaskPath, Taskname).
+
+task_completed(Task, State = #state{build_spec=BuildSpec, project_dir=ProjectDir, complete_tasks=PrevCompleteTasks}) ->
   RunCounts = State#state.run_counts,
   CompleteTasks = [Task | PrevCompleteTasks],
-  start_tasks(BuildSpec, CompleteTasks, RunCounts),
-  State#state{complete_tasks=CompleteTasks,
-    run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)}.
+  erdo_freshness:store(Task, ProjectDir, task_deps(Task), task_products(Task)),
+  start_tasks(ProjectDir, BuildSpec, CompleteTasks, RunCounts),
+  State#state{
+    complete_tasks=CompleteTasks,
+    run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
+  }.
 
-start_tasks(BuildSpec, CompleteTasks, RunCounts) ->
+start_tasks(ProjectDir, BuildSpec, CompleteTasks, RunCounts) ->
   lists:foreach(
-    fun(Task) -> start_task(Task, run_count(Task, RunCounts)) end,
+    fun(Task) -> start_task(ProjectDir, Task, run_count(Task, RunCounts)) end,
     eligible_tasks(BuildSpec, CompleteTasks)).
 
 run_count(Task, RunCounts) ->
@@ -87,10 +95,25 @@ run_count(Task, RunCounts) ->
     error -> 0
   end.
 
-start_task(Task, RunCount) when RunCount < ?RUN_LIMIT ->
-  erdo_project:start_task(Task);
-start_task(Task, RunCount) when RunCount >= ?RUN_LIMIT ->
-  {err, {too_many_repetitions, Task, RunCount}}.
+start_task(_ProjectRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
+  {err, {too_many_repetitions, Task, RunCount}};
+start_task(ProjectRoot, Task, RunCount) ->
+  [ RelExe | Args ] = Task,
+  {ok, Io, FullExe} = task_executable([ProjectRoot], RelExe),
+  file:close(Io),
+  start_task(ProjectRoot, {Task, FullExe, Args}, RunCount, erdo_freshness:check(Task, ProjectRoot, [FullExe | erdo_graph:dependencies(Task)])).
+
+start_task(_ProjectRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
+  erdo_events:task_skipped({task, Task}),
+  ok;
+start_task(_ProjectRoot, TaskSpec, _RunCount, _Fresh) ->
+  erdo_project:start_task(TaskSpec).
+
+task_deps(Task) ->
+  erdo_graphs:get_dependencies({task, Task}).
+
+task_products(Task) ->
+  erdo_graphs:get_products({task, Task}).
 
 eligible_tasks(BuildSpec, CompleteTasks) ->
   lists:subtract(

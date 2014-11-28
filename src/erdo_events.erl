@@ -9,7 +9,7 @@
 
 -module(erdo_events).
 
--export([build_requested/1, requirement_noted/2, production_noted/2, task_started/1, task_failed/1, task_completed/1, task_skipped/1, tasks_joint/2, tasks_ordered/2]).
+-export([build_requested/1, requirement_noted/2, production_noted/2, graph_changed/0, task_started/1, task_failed/1, task_completed/1, task_skipped/1, tasks_joint/2, tasks_ordered/2]).
 
 %% @spec:	build_requested(targets::target_list()) -> ok.
 %% @doc:	Emits a build_requested event
@@ -30,9 +30,15 @@ requirement_noted(Product,Dependency) ->
 production_noted(Task, Product) ->
   send_event({production_noted, {Task, Product}}).
 
+%% @spec:	graph_changed() -> ok.
+%% @doc:	The build graph has changed - the build should be re-evaluated
+%% @end
+-spec(graph_changed() -> ok).
+graph_changed() ->
+  send_event({graph_changed}).
+
 %% @spec:	task_started(task::erdo:task()) -> ok.
 %% @end
-
 -spec(task_started(erdo:task()) -> ok).
 task_started(Task) ->
   send_event({task_started, Task}).

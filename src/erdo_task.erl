@@ -1,37 +1,80 @@
 -module(erdo_task).
 -behavior(gen_server).
 %% API
--export([start_link/2, task_name/1]).
+-export([start_link/2, task_name/1, add_dep/3, add_prod/3, add_co/3, add_seq/3]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-  terminate/2, code_change/3]).
--define(SERVER, ?MODULE).
--record(state, {name, runspec, cmdport}).
-start_link(Name, RunSpec) ->
-  gen_server:start_link(?MODULE, [Name, RunSpec], []).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-record(state, {name, runspec, cmdport, graphitems}).
+start_link(RunSpec={Taskname, _Cmd, _Arg}, ProjectDir) ->
+  gen_server:start_link(task_atom(Taskname), ?MODULE, {RunSpec, ProjectDir}, []).
 
 task_name(TaskServer) ->
   gen_server:call(TaskServer, task_name).
 
+task_atom(Taskname) ->
+  task_atom(<<>>, Taskname).
+
+task_atom(Binary, []) ->
+  erlang:binary_to_atom(Binary);
+task_atom(Binary, [Lone]) ->
+  erlang:binary_to_atom(<<Binary/bitstring," \"",Lone/bitstring,"\"">>);
+task_atom(Binary, [Head|Tail]) ->
+  task_atom(<<Binary/bitstring," \"",Head/bitstring,"\"">>, Tail).
+
+
+-spec(add_dep(erdo:task_name(), erdo:product_name(), erdo:product_name()) -> ok).
+add_dep(Taskname, From, To) ->
+  gen_server:call(task_atom(Taskname), {add_dep, From, To}).
+
+-spec(add_prod(erdo:task_name(), erdo:task_name(), erdo:product_name()) -> ok).
+add_prod(Taskname, From, To) ->
+  gen_server:call(task_atom(Taskname), {add_prod, From, To}).
+
+-spec(add_co(erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
+add_co(Taskname, From, To) ->
+  gen_server:call(task_atom(Taskname), {add_co, From, To}).
+
+-spec(add_seq(erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
+add_seq(Taskname, From, To) ->
+  gen_server:call(task_atom(Taskname), {add_seq, From, To}).
+
+
 %%% gen_server callbacks
 
-init([Name, RunSpec]) ->
-  [Command | Args] = RunSpec,
-  CmdPort = open_port(
-    {spawn_executable, Command},
-    [
-      {args, Args},
-      {env, task_env()},
-      exit_status,
-      use_stdio,
-      stderr_to_stdout
-    ]
-  ),
-  erdo_events:task_started({task, Name}),
-  {ok, #state{name=Name, runspec=RunSpec, cmdport=CmdPort}}.
+init({TaskSpec, ProjectDir}) ->
+  {TaskName, Command, Args} = TaskSpec,
+  case task_running(TaskName) of
+    true -> {stop, {task_already_running, TaskName}};
+    _ ->
+      CmdPort = open_port(
+        {spawn_executable, Command},
+        [
+          {args, Args},
+          {env, task_env()},
+          {cd, ProjectDir},
+          exit_status,
+          use_stdio,
+          stderr_to_stdout
+        ]
+      ),
+      erdo_events:task_started({task, TaskName}),
+      {ok, #state{name=TaskName, runspec=TaskSpec, cmdport=CmdPort, graphitems=[]}}
+  end.
+
+task_running(Name) ->
+  lists:member(Name, erdo_task_soop:running_tasks()).
 
 handle_call(task_name, _From, State) ->
   {reply, State#state.name, State};
+handle_call({add_dep, From, To}, _From, State) ->
+  {reply, ok, State#state{graphitems=[{dep, From, To}|State#state.graphitems]}};
+handle_call({add_prod, Task, Prod}, _From, State) ->
+  {reply, ok, State#state{graphitems=[{prod, Task, Prod}|State#state.graphitems]}};
+handle_call({add_co, From, To}, _From, State) ->
+  {reply, ok, State#state{graphitems=[{cotask, From, To}|State#state.graphitems]}};
+handle_call({add_seq, From, To}, _From, State) ->
+  {reply, ok, State#state{graphitems=[{seq, From, To}|State#state.graphitems]}};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
@@ -42,8 +85,8 @@ handle_cast(_Msg, State) ->
 handle_info({CmdPort, {data, Data}}, State=#state{cmdport=CmdPort,name=Name}) ->
   received_data(Data,Name),
   {noreply, State};
-handle_info({CmdPort, {exit_status, Status}}, State=#state{cmdport=CmdPort,name=Name}) ->
-  exit_status(Status,Name),
+handle_info({CmdPort, {exit_status, Status}}, State=#state{cmdport=CmdPort,name=Name,graphitems=GraphItems}) ->
+  exit_status(Status,Name,GraphItems),
   {noreply, State};
 handle_info({'EXIT', CmdPort, ExitReason}, State=#state{cmdport=CmdPort,name=Name}) ->
   exited(ExitReason,Name),
@@ -67,7 +110,8 @@ received_data(_Data,_Name) ->
 exited(_Reason,_Name) ->
   ok.
 
-exit_status(0,Name) ->
+exit_status(0,Name,Graph) ->
+  erdo_graphs:task_batch(Name, Graph),
   erdo_events:task_completed({task, Name});
-exit_status(_Status,Name) ->
+exit_status(_Status,Name,_Graph) ->
   erdo_events:task_failed({task, Name}).

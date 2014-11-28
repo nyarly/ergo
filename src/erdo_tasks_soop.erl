@@ -7,7 +7,7 @@
 -module(erdo_tasks_soop).
 -behavior(supervisor).
 %% API
--export([start_link/0, start_task/2, start_task/3, running_tasks/0]).
+-export([start_link/0, start_task/3, running_tasks/0]).
 %% Supervisor callbacks
 -export([init/1]).
 -define(SERVER, ?MODULE).
@@ -16,25 +16,16 @@
 start_link() ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-start_task(Name, RunSpec) ->
-  supervisor:start_child(?SERVER, [Name, RunSpec]).
+start_task(Limit, RunSpec, ProjectDir) ->
+  start_task(task_count(), Limit, RunSpec, ProjectDir).
 
-start_task(Limit, Name, RunSpec) ->
-  start_task(task_count(), Limit, Name, RunSpec).
-
-start_task(Count, Limit, _Name, _RunSpec) when Count >= Limit ->
+start_task(Count, Limit, _RunSpec, _ProjDir) when Count >= Limit ->
   {err, {too_many_running_tasks, Count}};
-start_task(_Count, _Limit, Name, RunSpec) ->
-  case task_running(Name) of
-    true -> {err, {task_already_running, Name}};
-    false -> start_task(Name, RunSpec)
-  end.
+start_task(_Count, _Limit, RunSpec, ProjectDir) ->
+  supervisor:start_child(?SERVER, [RunSpec, ProjectDir]).
 
 task_count() ->
   proplists:get_value(active, supervisor:count_children(?SERVER)).
-
-task_running(Name) ->
-  lists:member(Name, running_tasks()).
 
 running_tasks() ->
   [erdo_task:task_name(TaskPid) || {_Id, TaskPid, _Type, _Mods} <- supervisor:which_children(?SERVER), is_pid(TaskPid)].
