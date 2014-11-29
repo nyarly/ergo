@@ -19,24 +19,25 @@ start_link() ->
 
 -type task_name() :: string().
 -type product_name() :: file:name_all().
--type edge_id() :: binary().
+-type edge_id() :: integer().
+-type normalized_product() :: string().
 
 -record(task, {name :: task_name(), command :: [binary()]}).
 -record(product, { name :: product_name() }).
 -record(next_id, { kind :: atom(), value :: integer() }).
 
 -record(seq, {
-          edge_id :: integer(), before :: task_name(), then :: task_name() }).
+          edge_id :: edge_id(), before :: task_name(), then :: task_name() }).
 -record(cotask, {
-          edge_id :: integer(), task :: task_name(), also :: task_name() }).
+          edge_id :: edge_id(), task :: task_name(), also :: task_name() }).
 -record(production, {
-          edge_id :: integer(), task :: task_name(), produces :: product_name() }).
+          edge_id :: edge_id(), task :: task_name(), produces :: normalized_product() }).
 -record(dep, {
-          edge_id :: integer(), from :: product_name(), to :: product_name() }).
+          edge_id :: edge_id(), from :: normalized_product(), to :: normalized_product() }).
 -type edge_record() :: #seq{} | #cotask{} | #production{} | #dep{}.
 
 -record(provenence, {
-          edge_id :: integer(), task :: task_name() }).
+          edge_id :: edge_id(), task :: task_name() }).
 
 
 %% @spec:	requires(First::erdo:produced(), Second::erdo:produced()) -> ok.
@@ -94,7 +95,7 @@ task_batch(Task,Graph) ->
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
--record(state, {edges :: ets:tid(), vertices :: ets:tid(), provenence :: ets:tid()}).
+-record(state, {project_root_re :: re:mp(), edges :: ets:tid(), vertices :: ets:tid(), provenence :: ets:tid()}).
 
 init([]) ->
   {ok, build_state() }.
@@ -135,27 +136,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 
 
--spec(process_task_batch(erdo:task_name(), [erdo:graph_item()], digraph:graph()) -> ok).
-process_task_batch(Taskname, CurrentItems, State) ->
-  KnownItems = items_for_task(Taskname,State),
-  NewItems = CurrentItems -- KnownItems,
-  MissingItems = KnownItems -- CurrentItems,
-  lists:foreach(fun add_item/1, NewItems),
-  lists:foreach(fun del_item/1, MissingItems),
-  if length(NewItems) > 0, length(MissingItems) > 0 ->
-       erdo_events:graph_changed()
-  end,
-  ok.
-
 build_state() ->
-  build_state(protected).
+  build_state("/").
 
-build_state(Access) ->
+build_state(ProjectRoot) ->
+  build_state(ProjectRoot, protected).
+
+build_state(ProjectRoot, Access) ->
   Vertices = ets:new(vertices, [set, Access, {keypos, 2}]),
   Edges = ets:new(edges, [bag, Access, {keypos, 2}]),
   Provenence = ets:new(provenence, [bag, Access, {keypos, 2}]),
   ets:insert(Vertices, #next_id{kind=edge_ids, value=0}),
-  #state{ edges=Edges, vertices=Vertices, provenence=Provenence }.
+  {ok,Regex} = re:compile(["^", filename:flatten(filename:absname(ProjectRoot))]),
+  #state{ project_root_re = Regex, edges=Edges, vertices=Vertices, provenence=Provenence }.
 
 cleanup_state(State) ->
   ets:delete(State#state.edges),
@@ -163,14 +156,85 @@ cleanup_state(State) ->
   ets:delete(State#state.provenence),
   ok.
 
-items_for_task(Taskname,State) ->
-  [].
-
-add_item(Item) ->
+-spec(process_task_batch(erdo:task_name(), [erdo:graph_item()], digraph:graph()) -> ok).
+process_task_batch(Taskname, ReceivedItems, State) ->
+  CurrentItems = normalize_items(State, ReceivedItems),
+  KnownItems = items_for_task(State, Taskname),
+  NewItems = CurrentItems -- KnownItems,
+  MissingItems = KnownItems -- CurrentItems,
+  Added = lists:foldl(fun(Item, Acc) -> add_statement(State, Taskname, Item) =/= ok or Acc end, false, NewItems),
+  Removed = lists:foldl(fun(Item, Acc) -> del_statement(State, Taskname, Item) =/= ok or Acc end, false, MissingItems),
+  if Added or Removed -> erdo_events:graph_changed(Added, Removed) end,
   ok.
 
-del_item(Item) ->
-  ok.
+-spec(normalize_product_name(#state{}, product_name()) -> normalized_product()).
+normalize_product_name(#state{project_root_re=Regex}, Name) ->
+  re:replace(filename:flatten(filename:absname(Name)), Regex, "").
+
+normalize_items(State, Items) ->
+  [ normalize_batch_statement(State, Item) || Item <- Items ].
+
+items_for_task(#state{edges=Edges,provenence=Provs}, Taskname) ->
+  [ statement_for_edge(Edge) || Edge <- ets:table(Edges), Prov <- ets:table(Provs),
+                                Prov#provenence.task =:= Taskname, Prov#provenence.edge_id =:= element(#seq.edge_id, Edge) ].
+
+add_statement(State=#state{provenence=Provs}, Taskname, Item) ->
+  {Newness, Edge} = add_statement(State, edge_for_statement(Item)),
+  EdgeId = element(#seq.edge_id, Edge),
+  ets:insert(Provs, #provenence{edge_id=EdgeId,task=Taskname}),
+  case Newness of
+    ok -> added;
+    exists -> ok
+  end.
+
+del_statement(State=#state{provenence=Provs,edges=Edges}, Taskname, Item) ->
+  {_, Edge} = add_statement(State, edge_for_statement(Item)),
+  EdgeId = element(#seq.edge_id, Edge),
+  ets:delete_object(Provs, #provenence{edge_id=EdgeId,task=Taskname}),
+  case ets:lookup(Provs, EdgeId) of
+    [] -> ets:delete_object(Edges, Edge), deleted;
+    _ -> ok
+  end.
+
+-spec(edge_for_statement(erdo:graph_item()) -> edge_record()).
+edge_for_statement({seq, Before, Then}) ->
+  #seq{before=Before,then=Then};
+edge_for_statement({co, Task, Also}) ->
+  #cotask{task=Task,also=Also};
+edge_for_statement({prod, Task,Produces}) ->
+  #production{task=Task,produces=Produces};
+edge_for_statement({dep, From, To}) ->
+  #dep{from=From,to=To};
+edge_for_statement(Statement) ->
+  {err, {unrecognized_statement, Statement}}.
+
+
+-spec(statement_for_edge(edge_record()) -> erdo:graph_item()).
+statement_for_edge(#seq{before=First,then=Second}) ->
+  {seq, First, Second};
+statement_for_edge(#cotask{task=WhenTask,also=AlsoTask}) ->
+  {co, WhenTask, AlsoTask};
+statement_for_edge(#production{task=Task,produces=Product}) ->
+  {prod, Task, Product};
+statement_for_edge(#dep{from=From,to=To}) ->
+  {dep, From, To};
+statement_for_edge(Edge) ->
+  {err, {unrecognized_edge, Edge}}.
+
+normalize_batch_statement(State, {dep, FromProd, ToProd}) ->
+  {dep,
+   normalize_product_name(State, FromProd),
+   normalize_product_name(State, ToProd)};
+normalize_batch_statement(State, {prod, Task, Prod}) ->
+  {prod,
+   Task,
+   normalize_product_name(State, Prod)};
+normalize_batch_statement(_State, Stmt={co, _, _}) ->
+  Stmt;
+normalize_batch_statement(_State, Stmt={seq, _, _}) ->
+  Stmt;
+normalize_batch_statement(_State, Statement) ->
+  {err, {unrecognized_statement, Statement}}.
 
 
 -spec(dump_to(#state{}, binary()) -> ok).
@@ -185,7 +249,15 @@ load_from(State, FilenameBase) ->
   {ok, VTab} = ets:file2tab([FilenameBase, ".vtab"]),
   {ok, ETab} = ets:file2tab([FilenameBase, ".etab"]),
   {ok, PTab} = ets:file2tab([FilenameBase, ".ptab"]),
+  maybe_delete_table(State#state.edges),
+  maybe_delete_table(State#state.vertices),
+  maybe_delete_table(State#state.provenence),
   State#state{edges = ETab, vertices = VTab, provenence = PTab}.
+
+maybe_delete_table(undefined) ->
+  ok;
+maybe_delete_table(Table) ->
+  ets:delete(Table).
 
 % Insert a dependency
 -spec(new_dep(digraph:graph(), erdo:produced(), erdo:produced()) -> digraph:edge()).
@@ -235,8 +307,10 @@ add_statement(State, Edge = #dep{from=From,to=To}) ->
 add_edge_if_missing(State=#state{edges=EdgeTable}, Edge, Query) ->
   case qlc:eval(Query) of
     [] ->
-      true = ets:insert(EdgeTable, setelement(2, Edge, next_edge_id(State))), ok;
-    _ -> exists
+      EdgeWithId = setelement(2, Edge, next_edge_id(State)),
+      true = ets:insert(EdgeTable, EdgeWithId),
+      {ok, EdgeWithId};
+    FoundList -> {exists, hd(FoundList)}
   end.
 
 add_product(State, ProductName) ->
@@ -453,41 +527,41 @@ digraph_test_() ->
   DumpFilename = "test-dump.erdograph",
 
   {foreach, %local, %digraphs are trapped in their process
-    fun() -> build_state(public) end, %setup
+    fun() -> build_state("/", public) end, %setup
     fun(State) -> cleanup_state(State) end, %teardown
     [
       fun(State) ->
           ?_test(begin
-                ?assertMatch(ok, new_dep(State, {product, ProductName}, {product, DependsOn})),
-                ?assertMatch(exists, new_dep(State, {product, ProductName}, {product, DependsOn})),
+                ?assertMatch({ok, _Edge}, new_dep(State, {product, ProductName}, {product, DependsOn})),
+                ?assertMatch({exists, _Edge}, new_dep(State, {product, ProductName}, {product, DependsOn})),
                 ?assertEqual(1, length(ets:tab2list(State#state.edges)))
             end)
       end,
       fun(State) ->
           ?_test(begin
-                ?assertMatch(ok, new_prod(State, {task, TaskName}, {product, ProductName})),
-                ?assertMatch(exists, new_prod(State, {task, TaskName}, {product, ProductName})),
+                ?assertMatch({ok, _Edge}, new_prod(State, {task, TaskName}, {product, ProductName})),
+                ?assertMatch({exists, _Edge}, new_prod(State, {task, TaskName}, {product, ProductName})),
                 ?assertEqual(1, length(ets:tab2list(State#state.edges)))
             end)
       end,
       fun(State) ->
           ?_test(begin
-                ?assertMatch(ok, co_task(State, {task, TaskName}, {task, OtherTaskName})),
-                ?assertMatch(exists, co_task(State, {task, TaskName}, {task, OtherTaskName})),
+                ?assertMatch({ok, _Edge}, co_task(State, {task, TaskName}, {task, OtherTaskName})),
+                ?assertMatch({exists, _Edge}, co_task(State, {task, TaskName}, {task, OtherTaskName})),
                 ?assertEqual(1, length(ets:tab2list(State#state.edges)))
             end)
       end,
       fun(State) ->
           ?_test(begin
-                ?assertMatch(ok, task_seq(State, {task, TaskName}, {task, OtherTaskName})),
-                ?assertMatch(exists, task_seq(State, {task, TaskName}, {task, OtherTaskName})),
+                ?assertMatch({ok, _Edge}, task_seq(State, {task, TaskName}, {task, OtherTaskName})),
+                ?assertMatch({exists, _Edge}, task_seq(State, {task, TaskName}, {task, OtherTaskName})),
                 ?assertEqual(1, length(ets:tab2list(State#state.edges)))
             end)
       end,
       fun(State) ->
           ?_test( begin
                 new_dep(State, {product, ProductName}, {product, DependsOn}),
-                ?assertMatch(ok,new_prod(State, {task, TaskName}, {product, ProductName})),
+                ?assertMatch({ok, _Edge},new_prod(State, {task, TaskName}, {product, ProductName})),
                 ?assertEqual(
                   [{product, DependsOn}],
                   task_deps(State, TaskName)
@@ -497,8 +571,8 @@ digraph_test_() ->
       fun(State) ->
           ?_test( begin
                 new_dep(State, {product, ProductName}, {product, DependsOn}),
-                ?assertMatch(ok,new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
-                ?assertMatch(ok,new_prod(State, {task, TaskName}, {product, ProductName})),
+                ?assertMatch({ok, _Edge},new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
+                ?assertMatch({ok, _Edge},new_prod(State, {task, TaskName}, {product, ProductName})),
                 ?assertEqual(
                   [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
                   build_list(State, [{product, ProductName}])
@@ -508,8 +582,8 @@ digraph_test_() ->
       fun(State) ->
           ?_test( begin
                 new_dep(State, {product, ProductName}, {product, DependsOn}),
-                ?assertMatch(ok,new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
-                ?assertMatch(ok,new_prod(State, {task, TaskName}, {product, ProductName})),
+                ?assertMatch({ok, _Edge},new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
+                ?assertMatch({ok, _Edge},new_prod(State, {task, TaskName}, {product, ProductName})),
                 ?assertMatch(ok, dump_to(State, DumpFilename)),
                 NewState = load_from(#state{}, DumpFilename),
                 ?assertEqual(

@@ -9,8 +9,8 @@
 -type build_spec() :: task().
 -type target() :: produced() | task ().
 -type command_result() :: {result, ok}.
--type graph_dep_item() :: {dep, productname(), productname()}.
--type graph_prod_item() :: {prod, taskname(), productname()}.
--type graph_co_item() :: {co, taskname(), taskname()}.
 -type graph_seq_item() :: {seq, taskname(), taskname()}.
+-type graph_co_item() :: {co, taskname(), taskname()}.
+-type graph_prod_item() :: {prod, taskname(), productname()}.
+-type graph_dep_item() :: {dep, productname(), productname()}.
 -type graph_item() :: graph_dep_item() | graph_prod_item() | graph_co_item() | graph_seq_item().
