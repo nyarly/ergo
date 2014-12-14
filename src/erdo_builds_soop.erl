@@ -7,21 +7,23 @@
 -module(erdo_builds_soop).
 -behavior(supervisor).
 %% API
--export([start_link/0, start_build/1, running_builds/0]).
+-export([start_link/1, start_build/2, running_builds/1]).
 %% Supervisor callbacks
 -export([init/1]).
 -define(SERVER, ?MODULE).
 
+-define(VIA(WorkspaceName), {via, erdo_workspace_registry, {WorkspaceName, builds, only}}).
+
 %%% API functions
-start_link() ->
-  supervisor:start_link({local, ?SERVER}, ?MODULE, []).
-start_build(Args) ->
-  supervisor:start_child(?SERVER, Args).
-running_builds() ->
-  [TaskPid || {_Id, TaskPid, _Type, _Mods} <- supervisor:which_children(?SERVER), is_pid(TaskPid)].
+start_link([WorkspaceName]) ->
+  supervisor:start_link(?VIA(WorkspaceName), ?MODULE, WorkspaceName).
+start_build(WorkspaceName, Args) ->
+  supervisor:start_child(?VIA(WorkspaceName), Args).
+running_builds(WorkspaceName) ->
+  [TaskPid || {_Id, TaskPid, _Type, _Mods} <- supervisor:which_children(?VIA(WorkspaceName)), is_pid(TaskPid)].
 
 %%% Supervisor callbacks
-init([]) ->
+init(WorkspaceName) ->
   RestartStrategy = simple_one_for_one,
   MaxRestarts = 10,
   MaxSecondsBetweenRestarts = 3600,
@@ -29,6 +31,6 @@ init([]) ->
   Restart = permanent,
   Shutdown = 2000,
   Type = worker,
-  AChild = {ignored, {erdo_build, start_link, []},
+  AChild = {ignored, {erdo_build, start_link, [WorkspaceName]},
     Restart, Shutdown, Type, [erdo_build]},
   {ok, {SupFlags, [AChild]}}.

@@ -39,6 +39,8 @@ start_link() ->
 -record(provenence, {
           edge_id :: edge_id(), task :: task_name() }).
 
+-record(edge_label, { from_edges :: [edge_id()] }).
+-record(gen_edge, {from :: task_name(), to :: task_name(), implied_by :: [edge_id()] }).
 
 %% @spec:	requires(First::erdo:produced(), Second::erdo:produced()) -> ok.
 %% @end
@@ -95,7 +97,7 @@ task_batch(Task,Graph) ->
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
--record(state, {project_root_re :: re:mp(), edges :: ets:tid(), vertices :: ets:tid(), provenence :: ets:tid()}).
+-record(state, {workspace_root_re :: re:mp(), edges :: ets:tid(), vertices :: ets:tid(), provenence :: ets:tid()}).
 
 init([]) ->
   {ok, build_state() }.
@@ -139,16 +141,16 @@ code_change(_OldVsn, State, _Extra) ->
 build_state() ->
   build_state("/").
 
-build_state(ProjectRoot) ->
-  build_state(ProjectRoot, protected).
+build_state(WorkspaceRoot) ->
+  build_state(WorkspaceRoot, protected).
 
-build_state(ProjectRoot, Access) ->
+build_state(WorkspaceRoot, Access) ->
   Vertices = ets:new(vertices, [set, Access, {keypos, 2}]),
   Edges = ets:new(edges, [bag, Access, {keypos, 2}]),
   Provenence = ets:new(provenence, [bag, Access, {keypos, 2}]),
   ets:insert(Vertices, #next_id{kind=edge_ids, value=0}),
-  {ok,Regex} = re:compile(["^", filename:flatten(filename:absname(ProjectRoot))]),
-  #state{ project_root_re = Regex, edges=Edges, vertices=Vertices, provenence=Provenence }.
+  {ok,Regex} = re:compile(["^", filename:flatten(filename:absname(WorkspaceRoot))]),
+  #state{ workspace_root_re = Regex, edges=Edges, vertices=Vertices, provenence=Provenence }.
 
 cleanup_state(State) ->
   ets:delete(State#state.edges),
@@ -168,7 +170,7 @@ process_task_batch(Taskname, ReceivedItems, State) ->
   ok.
 
 -spec(normalize_product_name(#state{}, product_name()) -> normalized_product()).
-normalize_product_name(#state{project_root_re=Regex}, Name) ->
+normalize_product_name(#state{workspace_root_re=Regex}, Name) ->
   re:replace(filename:flatten(filename:absname(Name)), Regex, "").
 
 normalize_items(State, Items) ->
@@ -385,14 +387,108 @@ task_products_query(#state{vertices=Vertices, edges=Edges}, TaskName) ->
 build_list(State, Targets) ->
   SeqGraph = seq_graph(State),
   AlsoGraph = also_graph(State),
-  TargetVertices = tasknames_to_vertices(AlsoGraph, [Taskname || {task, Taskname} <- tasks_from_targets(State, Targets)]),
-  NeededTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(TargetVertices, AlsoGraph)),
+  TargetTasks = [Taskname || {task, Taskname} <- tasks_from_targets(State, Targets)],
+
+  TargetVertices = tasknames_to_vertices(AlsoGraph, TargetTasks),
+  BaseTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(TargetVertices, AlsoGraph)),
+  DeterminedBy = determining_edges(SeqGraph, AlsoGraph, BaseTasknames),
+  Endorsers = extra_endorser_tasks(DeterminedBy, BaseTasknames, State),
+
+  AllVertices = tasknames_to_vertices(AlsoGraph, TargetTasks ++ Endorsers),
+  NeededTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(AllVertices, AlsoGraph)),
+
   SeqVs = digraph_utils:topsort(digraph_utils:subgraph(SeqGraph, tasknames_to_vertices(SeqGraph, NeededTasknames))),
   Specs = [{taskname_from_vertex(SeqGraph, TV),
             [taskname_from_vertex(SeqGraph, PredTask) || PredTask <- digraph_utils:reaching_neighbours([TV], SeqGraph)]
            } || TV <- SeqVs ],
   digraph:delete(AlsoGraph), digraph:delete(SeqGraph),
   Specs.
+
+extra_endorser_tasks(Edges, KnownTasks, State = #state{provenence=Prov}) ->
+  {TaskDict, EdgeDict} = lists:foldl(fun(EdgeId, {TDict, EDict}) ->
+                                         lists:foldl(fun(#provenence{task=Taskname}, {TaskDict, EdgeDict}) ->
+                                                         {
+                                                          dict:update(Taskname, fun(List) -> [EdgeId | List] end, [], TaskDict),
+                                                          dict:update(EdgeId, fun(List) -> [Taskname | List] end, [], EdgeDict)
+                                                         }
+                                                     end,
+                                                     {TDict, EDict},
+                                                     ets:lookup(Prov, EdgeId))
+                                     end,
+                                     {dict:new(), dict:new()}, Edges -- edges_endorsed_by(State, KnownTasks)),
+  reduced_endorser_set(TaskDict, EdgeDict, []).
+
+edges_endorsed_by(#state{provenence=Prov}, Tasklist) ->
+  gb_sets:to_list(
+    lists:foldl(fun(T, Set) ->
+                    lists:foldl(fun(Id, S) -> gb_sets:add(Id, S) end,
+                                Set, qlc:eval(qlc:q([EdgeId ||
+                                                          #provenence{edge_id=EdgeId, task=Task} <- ets:table(Prov), Task =:= T])))
+                end, gb_sets:new(), Tasklist)).
+
+reduced_endorser_set(Tasks, Edges, Chosen) ->
+  case dict:is_empty(Edges) of
+    true -> Chosen;
+    _ ->
+      NewChoice = choose_task(Tasks, Edges),
+      reduced_endorser_set(dict:erase(NewChoice, Tasks), satisfy_edges(NewChoice, Tasks, Edges), [NewChoice | Chosen])
+  end.
+
+choose_task(Tasks, Edges) ->
+  case first_singular_task(dict:fetch_keys(Edges), Edges) of
+    {ok, Task} -> Task;
+    _ -> most_edges(dict:fetch_keys(Tasks), Tasks)
+  end.
+
+first_singular_task([EdgeId | Rest], Edges) ->
+  Tasks = dict:fetch(EdgeId, Edges),
+  case length(Tasks) of
+    1 -> {ok, hd(Tasks)};
+    _ -> first_singular_task(Rest, Edges)
+  end;
+first_singular_task([], _Edges) ->
+  none.
+
+most_edges([Task | Rest], Tasks) ->
+  most_edges(Rest, Tasks, Task, length(dict:fetch(Tasks, Task))).
+
+most_edges([Task | Rest], Dict, Chosen, Count) ->
+  NewCount = length(dict:fetch(Dict, Task)),
+  if Count < NewCount -> most_edges(Rest, Dict, Task, NewCount);
+     true -> most_edges(Rest, Dict, Chosen, Count)
+  end.
+
+satisfy_edges(Task, Tasks, Edges) ->
+  lists:foldl(fun(Edge, EdgeDict) ->
+                  dict:erase(Edge, EdgeDict)
+              end, Edges, dict:fetch(Task, Tasks)).
+
+seq_subgraph(SeqGraph, Tasknames) ->
+  TaskVs = tasknames_to_vertices(SeqGraph, Tasknames),
+  Reachable = gb_sets:from_list(digraph_utils:reachable(TaskVs, SeqGraph)),
+  Reaching = gb_sets:from_list(digraph_utils:reaching(TaskVs, SeqGraph)),
+  SubVs = gb_sets:to_list(gb_sets:intersection(Reachable, Reaching)),
+  digraph_utils:subgraph(SeqGraph, SubVs).
+
+also_subgraph(Graph, Tasknames) ->
+  digraph_utils:subgraph(Graph, tasknames_to_vertices(Graph, Tasknames)).
+
+-spec(determining_edges(digraph:graph(), digraph:graph(), [task_name()]) -> [edge_id()]).
+determining_edges(SeqGraph, AlsoGraph, Tasknames) ->
+  EdgeSet = collect_edge_ids(seq_subgraph(SeqGraph, Tasknames),
+                             collect_edge_ids(also_subgraph(AlsoGraph, Tasknames), gb_sets:new())),
+  gb_sets:to_list(EdgeSet).
+
+-spec(collect_edge_ids(digraph:graph(), gb_sets:set())-> gb_sets:set(edge_id())).
+collect_edge_ids(Subgraph, EdgeSet) ->
+  lists:foldl(
+    fun({_E, _V1, _V2, #edge_label{from_edges=Edges}}, Set) ->
+        lists:foldl(fun gb_sets:add/2, Set, Edges);
+       (X, Y) -> ?debugVal(X), ?debugVal(Y),
+                 {E, Label} = X,
+                 Set = Y
+    end,
+    EdgeSet, [ digraph:edge(Subgraph, E) || E <- digraph:edges(Subgraph) ]).
 
 taskname_from_vertex(Graph, Vertex) ->
   {_V, Taskname} = digraph:vertex(Graph, Vertex),
@@ -410,27 +506,23 @@ tasknames_to_vertices(Graph, Tasknames) ->
 
 -spec(also_graph(#state{}) -> digraph:graph()).
 also_graph(State) ->
-  AlsoGraph = digraph:new(),
-  TaskLookup = task_cache(AlsoGraph, all_tasks(State)),
-  lists:foreach(
-    fun(AlsoEdge) ->
-        TaskV = gb_trees:get(AlsoEdge#cotask.task, TaskLookup),
-        AlsoV = gb_trees:get(AlsoEdge#cotask.also, TaskLookup),
-        digraph:add_edge(AlsoGraph, TaskV, AlsoV)
-    end, all_cotask_edges(State)),
-  AlsoGraph.
+  intermediate_graph(State, digraph:new(), all_cotask_edges(State)).
 
 -spec(seq_graph(#state{}) -> digraph:graph()).
 seq_graph(State) ->
-  SeqGraph = digraph:new([acyclic]),
-  TaskLookup = task_cache(SeqGraph, all_tasks(State)),
+  intermediate_graph(State, digraph:new([acyclic]), all_seq_edges(State)).
+
+
+-spec(intermediate_graph(#state{}, digraph:graph(), [edge_record()]) -> digraph:graph()).
+intermediate_graph(State, Graph, EdgeList) ->
+  TaskLookup = task_cache(Graph, all_tasks(State)),
   lists:foreach(
-    fun(SeqEdge) ->
-        BeforeV = gb_trees:get(SeqEdge#seq.before, TaskLookup),
-        ThenV = gb_trees:get(SeqEdge#seq.then, TaskLookup),
-        digraph:add_edge(SeqGraph, BeforeV, ThenV)
-    end, all_seq_edges(State)),
-  SeqGraph.
+    fun(Edge) ->
+        BeforeV = gb_trees:get(Edge#gen_edge.from, TaskLookup),
+        ThenV = gb_trees:get(Edge#gen_edge.to, TaskLookup),
+        digraph:add_edge(Graph, BeforeV, ThenV,
+                         #edge_label{from_edges=Edge#gen_edge.implied_by})
+    end, EdgeList), Graph.
 
 task_cache(Graph, Tasks) ->
   lists:foldl( fun(Task, TaskLookup) ->
@@ -448,22 +540,23 @@ all_seq_edges(State) ->
   qlc:eval(qlc:append(implied_seq_query(State), explicit_seq_query(State))).
 
 implied_seq_query(State) ->
-  qlc:q([#seq{before=BeforeTask,then=ThenTask} ||
-         {BeforeTask, ThenTask} <- task_to_task_dep_query(State)]).
+  qlc:q([Edge || Edge <- task_to_task_dep_query(State)]).
 
 explicit_seq_query(#state{edges=Edges}) ->
-  qlc:q([Seq || Seq <- ets:table(Edges), is_record(Seq, seq)]).
+  qlc:q([#gen_edge{from=Seq#seq.before, to=Seq#seq.then, implied_by=[Seq#seq.edge_id]} ||
+         Seq <- ets:table(Edges), is_record(Seq, seq)]).
 
 -spec(all_cotask_edges(#state{}) -> [#cotask{}]).
 all_cotask_edges(State) ->
   qlc:eval(qlc:append(implied_cotask_query(State), explicit_cotask_query(State))).
 
 implied_cotask_query(State) ->
-  qlc:q([#cotask{task=Task,also=Also} ||
-         {Also, Task} <- task_to_task_dep_query(State)]).
+  qlc:q([#gen_edge{from=From,to=To,implied_by=ImpliedBy} ||
+         #gen_edge{from=To,to=From,implied_by=ImpliedBy} <- task_to_task_dep_query(State)]).
 
 explicit_cotask_query(#state{edges=Edges}) ->
-  qlc:q([Also || Also <- ets:table(Edges), is_record(Also, cotask)]).
+  qlc:q([#gen_edge{from=Also#cotask.task, to=Also#cotask.also, implied_by=[Also#cotask.edge_id]} ||
+         Also <- ets:table(Edges), is_record(Also, cotask)]).
 
 
 %  (Prior) --- PriorPdctn --- > (Dep)
@@ -473,9 +566,10 @@ explicit_cotask_query(#state{edges=Edges}) ->
 %                                 |
 %                                 v
 %  (Post) --- PostPdctn -----> (Prod)
--spec(task_to_task_dep_query(#state{}) -> [{task_name(), task_name()}]).
+-spec(task_to_task_dep_query(#state{}) -> [#gen_edge{}]).
 task_to_task_dep_query(#state{edges=Edges}) ->
-  qlc:q([{PriorPdctn#production.task, PostPdctn#production.task} ||
+  qlc:q([#gen_edge{from=PriorPdctn#production.task, to=PostPdctn#production.task,
+                  implied_by=[PriorPdctn#production.edge_id,Depcy#dep.edge_id,PostPdctn#production.edge_id]} ||
          PriorPdctn <- ets:table(Edges), Depcy <- ets:table(Edges), PostPdctn <- ets:table(Edges),
          PostPdctn#production.produces =:= Depcy#dep.from, PriorPdctn#production.produces =:= Depcy#dep.to
         ]).

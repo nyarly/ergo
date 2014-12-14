@@ -2,49 +2,41 @@
 -behavior(gen_event).
 
 %% API
--export([add_to/1, add_to/2, add_to_sup/1, add_to_sup/2]).
+-export([start/3]).
 
 %% gen_event callbacks
 -export([init/1, handle_event/2, handle_call/2,
   handle_info/2, terminate/2, code_change/3]).
 
--record(state, {requested_targets, build_spec, project_dir, complete_tasks, run_counts}).
+-record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts}).
 -define(RUN_LIMIT,20).
 
 %%%===================================================================
 %%% Module API
 %%%===================================================================
-add_to(Server) ->
-  add_to(Server, []).
 
-add_to(Server, Args) ->
-  Handler = {?MODULE, make_ref()},
-  gen_event:add_handler(Server, ?MODULE, Args),
-  Handler.
-
-add_to_sup(Server) ->
-  add_to_sup(Server, []).
-
-add_to_sup(Server, Args) ->
-  Handler = {?MODULE, make_ref()},
-  gen_event:add_sup_handler(Server, ?MODULE, Args),
-  Handler.
+start(WorkspaceName, BuildId, Targets) ->
+  Events = {via, erdo_workspace_registry, {WorkspaceName, events, only}},
+  gen_event:add_hander(Events, ?MODULE, {WorkspaceName, BuildId, Targets}),
+  gen_event:notify(Events, {build_start, WorkspaceName, BuildId}).
 
 %%%===================================================================
 %%% gen_event callbacks
 %%%===================================================================
-init({Targets, ProjectDir}) ->
+init({WorkspaceName, BuildId, Targets}) ->
   BuildSpec=erdo_graphs:build_spec(Targets),
-  start_tasks(ProjectDir, BuildSpec, [], dict:new()),
   {ok, #state{
       requested_targets=Targets,
       complete_tasks=[],
       build_spec=BuildSpec,
-      project_dir=ProjectDir,
+      build_id=BuildId,
+      workspace_dir=WorkspaceName,
       run_counts=dict:new()
     }
   }.
 
+handle_event({build_start, WorkspaceName, BuildId}, State=#state{build_spec=BuildSpec,build_id=BuildId,workspace_dir=WorkspaceName}) ->
+  {ok, start_tasks(WorkspaceName, BuildSpec, [], dict:new()), State};
 handle_event({task_completed, Task}, State) ->
   {ok, task_completed(Task, State)};
 handle_event(_Event, State) ->
@@ -74,19 +66,19 @@ code_change(_OldVsn, State, _Extra) ->
 task_executable(TaskPath, Taskname) ->
   file:path_open(TaskPath, Taskname).
 
-task_completed(Task, State = #state{build_spec=BuildSpec, project_dir=ProjectDir, complete_tasks=PrevCompleteTasks}) ->
+task_completed(Task, State = #state{build_spec=BuildSpec, workspace_dir=WorkspaceDir, complete_tasks=PrevCompleteTasks}) ->
   RunCounts = State#state.run_counts,
   CompleteTasks = [Task | PrevCompleteTasks],
-  erdo_freshness:store(Task, ProjectDir, task_deps(Task), task_products(Task)),
-  start_tasks(ProjectDir, BuildSpec, CompleteTasks, RunCounts),
+  erdo_freshness:store(Task, WorkspaceDir, task_deps(Task), task_products(Task)),
+  start_tasks(WorkspaceDir, BuildSpec, CompleteTasks, RunCounts),
   State#state{
     complete_tasks=CompleteTasks,
     run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
   }.
 
-start_tasks(ProjectDir, BuildSpec, CompleteTasks, RunCounts) ->
+start_tasks(WorkspaceDir, BuildSpec, CompleteTasks, RunCounts) ->
   lists:foreach(
-    fun(Task) -> start_task(ProjectDir, Task, run_count(Task, RunCounts)) end,
+    fun(Task) -> start_task(WorkspaceDir, Task, run_count(Task, RunCounts)) end,
     eligible_tasks(BuildSpec, CompleteTasks)).
 
 run_count(Task, RunCounts) ->
@@ -95,19 +87,19 @@ run_count(Task, RunCounts) ->
     error -> 0
   end.
 
-start_task(_ProjectRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
+start_task(WorkdspaceRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
   {err, {too_many_repetitions, Task, RunCount}};
-start_task(ProjectRoot, Task, RunCount) ->
+start_task(WorkspaceRoot, Task, RunCount) ->
   [ RelExe | Args ] = Task,
-  {ok, Io, FullExe} = task_executable([ProjectRoot], RelExe),
+  {ok, Io, FullExe} = task_executable([WorkspaceRoot], RelExe),
   file:close(Io),
-  start_task(ProjectRoot, {Task, FullExe, Args}, RunCount, erdo_freshness:check(Task, ProjectRoot, [FullExe | erdo_graph:dependencies(Task)])).
+  start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount, erdo_freshness:check(Task, WorkspaceRoot, [FullExe | erdo_graph:dependencies(Task)])).
 
-start_task(_ProjectRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
+start_task(_WorkspaceRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
   erdo_events:task_skipped({task, Task}),
   ok;
-start_task(_ProjectRoot, TaskSpec, _RunCount, _Fresh) ->
-  erdo_project:start_task(TaskSpec).
+start_task(_WorkspaceRoot, TaskSpec, _RunCount, _Fresh) ->
+  erdo_workspace:start_task(TaskSpec).
 
 task_deps(Task) ->
   erdo_graphs:get_dependencies({task, Task}).

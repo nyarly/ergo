@@ -6,8 +6,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {name, runspec, cmdport, graphitems}).
-start_link(RunSpec={Taskname, _Cmd, _Arg}, ProjectDir) ->
-  gen_server:start_link(task_atom(Taskname), ?MODULE, {RunSpec, ProjectDir}, []).
+start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir) ->
+  gen_server:start_link(task_atom(Taskname), ?MODULE, {RunSpec, WorkspaceDir}, []).
 
 task_name(TaskServer) ->
   gen_server:call(TaskServer, task_name).
@@ -17,8 +17,6 @@ task_atom(Taskname) ->
 
 task_atom(Binary, []) ->
   erlang:binary_to_atom(Binary);
-task_atom(Binary, [Lone]) ->
-  erlang:binary_to_atom(<<Binary/bitstring," \"",Lone/bitstring,"\"">>);
 task_atom(Binary, [Head|Tail]) ->
   task_atom(<<Binary/bitstring," \"",Head/bitstring,"\"">>, Tail).
 
@@ -42,7 +40,7 @@ add_seq(Taskname, From, To) ->
 
 %%% gen_server callbacks
 
-init({TaskSpec, ProjectDir}) ->
+init({TaskSpec, WorkspaceDir}) ->
   {TaskName, Command, Args} = TaskSpec,
   case task_running(TaskName) of
     true -> {stop, {task_already_running, TaskName}};
@@ -52,7 +50,7 @@ init({TaskSpec, ProjectDir}) ->
         [
           {args, Args},
           {env, task_env()},
-          {cd, ProjectDir},
+          {cd, WorkspaceDir},
           exit_status,
           use_stdio,
           stderr_to_stdout

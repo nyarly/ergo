@@ -16,19 +16,20 @@
 start_link() ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-start_task(Limit, RunSpec, ProjectDir) ->
-  start_task(task_count(), Limit, RunSpec, ProjectDir).
+start_task(Limit, RunSpec, WorkspaceDir) ->
+  start_task(task_count(), Limit, RunSpec, WorkspaceDir).
 
 start_task(Count, Limit, _RunSpec, _ProjDir) when Count >= Limit ->
   {err, {too_many_running_tasks, Count}};
-start_task(_Count, _Limit, RunSpec, ProjectDir) ->
-  supervisor:start_child(?SERVER, [RunSpec, ProjectDir]).
+start_task(_Count, _Limit, RunSpec, WorkspaceDir) ->
+  supervisor:start_child(?SERVER, [RunSpec, WorkspaceDir]).
 
 task_count() ->
   proplists:get_value(active, supervisor:count_children(?SERVER)).
 
 running_tasks() ->
-  [erdo_task:task_name(TaskPid) || {_Id, TaskPid, _Type, _Mods} <- supervisor:which_children(?SERVER), is_pid(TaskPid)].
+  [erdo_task:task_name(TaskPid) || {_Id, TaskPid, _Type, _Mods} <-
+                                   supervisor:which_children(?SERVER), is_pid(TaskPid)].
 
 %%% Supervisor callbacks
 init([]) ->
@@ -39,6 +40,5 @@ init([]) ->
   Restart = permanent,
   Shutdown = 2000,
   Type = worker,
-  AChild = {ignored, {erdo_task, start_link, []},
-    Restart, Shutdown, Type, [erdo_task]},
+  AChild = {ignored, {erdo_task, start_link, []}, Restart, Shutdown, Type, [erdo_task]},
   {ok, {SupFlags, [AChild]}}.

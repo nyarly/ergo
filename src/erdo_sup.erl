@@ -2,21 +2,33 @@
 -behaviour(supervisor).
 
 -export([start_link/0]).
--export([init/1]).
+-export([init/1, start_workspace/1]).
 
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+supervised(Name, Module) ->
+  supervised(Name, Module, worker).
+
+supervised(Name, Module, Type) ->
+  { Name, { Module, start_link, [] }, permanent, 5, Type, [Module]}.
+
+
 init([]) ->
   Procs = [
-    { server, { erdo_server, start_link, [] }, permanent, 5, worker, [erdo_server]},
-    { events, { gen_event, start_link, [{local,erdo_events}] }, permanent, 5, worker, dynamic},
-    { builds, { erdo_build_soop, start_link, []}, permanent, 5, supervisor, [erdo_build_soop]},
-    { tasks, { erdo_task_soop, start_link, []}, permanent, 5, supervisor, [erdo_task_soop]},
-    { graphs, { erdo_graphs, start_link, []}, permanent, 5, worker, [erdo_graphs]},
-    { freshness, { erdo_freshness, start_link, []}, permanent, 5, worker, [erdo_freshness]}
-  ],
+           supervised(server, erdo_server),
+           supervised(registry, erdo_workspace_registry),
+           supervised(tasks, erdo_task_soop, supervisor),
+           supervised(freshness, erdo_freshness)
+          ],
   {ok, {{one_for_one, 1, 5}, Procs}}.
+
+
+start_workspace(Name) ->
+  supervisor:start_child(?MODULE,
+                         {{proj_sup, Name},
+                          {erdo_workspace_sup, start_link, Name},
+                          permanent, 5, supervisor, [erdo_workspace_sup]}).
 
 % Major components:
 %   erdo_commands: the API module for external commands
