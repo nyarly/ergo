@@ -1,28 +1,35 @@
 -module(erdo_workspace).
 -behavior(gen_server).
 %% API
--export([start_link/1, start_task/1, start_build/1]).
+-export([start_link/1, start_task/2, start_build/2, current/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
--define(SERVER, ?MODULE).
+
+-define(VIA(Workspace), {via, erdo_workspace_registry, {Workspace, server, only}}).
 -record(state, {workspace_dir, task_limit}).
 start_link(WorkspaceDir) ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [WorkspaceDir], []).
+  gen_server:start_link(?VIA(WorkspaceDir), ?MODULE, [WorkspaceDir], []).
+
 
 %% @spec:	start_task(TaskName::string()) -> ok.
 %% @end
 
--spec(start_task(erdo:taskspec()) -> ok).
-start_task(RunSpec) ->
-  gen_server:call({start_task, RunSpec}).
+-spec(start_task(erdo:workspace_name(), erdo:taskspec()) -> ok).
+start_task(Workspace, RunSpec) ->
+  gen_server:call(?VIA(Workspace), {start_task, RunSpec}).
+
+-spec(start_build(erdo:workspace_name(), [erdo:target()]) -> ok).
+start_build(Workspace, Targets) ->
+  gen_server:call(?VIA(Workspace), {start_build, {Targets}}).
+
+-spec(current() -> erdo:workspace_name() | no_workspace).
+current() ->
+  no_workspace.
 
 %% @spec:	start_build() -> ok.
 %% @end
 
--spec(start_build([erdo:target()]) -> ok).
-start_build(Targets) ->
-  gen_server:call({start_build, {Targets}}).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================

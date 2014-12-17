@@ -8,7 +8,10 @@
 -export([init/1, handle_event/2, handle_call/2,
   handle_info/2, terminate/2, code_change/3]).
 
--record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts}).
+-record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts, waiters}).
+
+-define(VIA(Workspace), {via, erdo_workspace_registry, {Workspace, events, only}}).
+-define(ID(Workspace, Id), {?MODULE, {Workspace, Id}}).
 -define(RUN_LIMIT,20).
 
 %%%===================================================================
@@ -16,9 +19,13 @@
 %%%===================================================================
 
 start(WorkspaceName, BuildId, Targets) ->
-  Events = {via, erdo_workspace_registry, {WorkspaceName, events, only}},
-  gen_event:add_hander(Events, ?MODULE, {WorkspaceName, BuildId, Targets}),
+  Events = ?VIA(WorkspaceName),
+  gen_event:add_hander(Events, ?ID(WorkspaceName, BuildId), {WorkspaceName, BuildId, Targets}),
   gen_event:notify(Events, {build_start, WorkspaceName, BuildId}).
+
+link_to(Workspace, Id, Pid) ->
+  gen_event:call(?VIA(Workspace), ?ID(Workspace, Id), {exit_when_done, Pid}).
+
 
 %%%===================================================================
 %%% gen_event callbacks
@@ -31,17 +38,24 @@ init({WorkspaceName, BuildId, Targets}) ->
       build_spec=BuildSpec,
       build_id=BuildId,
       workspace_dir=WorkspaceName,
-      run_counts=dict:new()
+      run_counts=dict:new(),
+      waiters=[]
     }
   }.
 
-handle_event({build_start, WorkspaceName, BuildId}, State=#state{build_spec=BuildSpec,build_id=BuildId,workspace_dir=WorkspaceName}) ->
+handle_event({build_start, WorkspaceName, BuildId},
+             State=#state{build_spec=BuildSpec,build_id=BuildId,workspace_dir=WorkspaceName}) ->
   {ok, start_tasks(WorkspaceName, BuildSpec, [], dict:new()), State};
 handle_event({task_completed, Task}, State) ->
   {ok, task_completed(Task, State)};
+handle_event({build_completed, BuildId}, State=#state{build_id=BuildId}) ->
+  build_completed(State),
+  remove_handler;
 handle_event(_Event, State) ->
   {ok, State}.
 
+handle_call({exit_when_done, Pid}, State=#state{waiters=Waiters}) ->
+  {ok, ok, State#state{waiters=[Pid|Waiters]}};
 handle_call(_Request, State) ->
   Reply = ok,
   {ok, Reply, State}.
@@ -87,13 +101,16 @@ run_count(Task, RunCounts) ->
     error -> 0
   end.
 
-start_task(WorkdspaceRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
+start_task(_WorkdspaceRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
   {err, {too_many_repetitions, Task, RunCount}};
 start_task(WorkspaceRoot, Task, RunCount) ->
   [ RelExe | Args ] = Task,
   {ok, Io, FullExe} = task_executable([WorkspaceRoot], RelExe),
   file:close(Io),
   start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount, erdo_freshness:check(Task, WorkspaceRoot, [FullExe | erdo_graph:dependencies(Task)])).
+
+build_completed(#state{waiters=Waiters,build_id=BuildId,requested_targets=Targets}) ->
+  [exit(Waiter,{build_completed,BuildId,Targets}) || Waiter <- Waiters].
 
 start_task(_WorkspaceRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
   erdo_events:task_skipped({task, Task}),

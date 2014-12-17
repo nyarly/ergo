@@ -2,7 +2,7 @@
 -behaviour(supervisor).
 
 -export([start_link/0]).
--export([init/1, start_workspace/1]).
+-export([init/1, start_workspace/1, find_workspace/1]).
 
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, []).
@@ -25,10 +25,23 @@ init([]) ->
 
 
 start_workspace(Name) ->
-  supervisor:start_child(?MODULE,
+  case supervisor:start_child(?MODULE,
                          {{proj_sup, Name},
                           {erdo_workspace_sup, start_link, Name},
-                          permanent, 5, supervisor, [erdo_workspace_sup]}).
+                          permanent, 5, supervisor, [erdo_workspace_sup]}) of
+    {ok, Pid} -> Pid;
+    {error, {already_started, Pid}} -> Pid;
+    Error = {error, _} -> Error;
+    Any -> {error, Any}
+  end.
+
+
+find_workspace(Name) ->
+  case [Child || {Id, Child, _Type, _Modules} <- supervisor:which_children(?MODULE),
+                 {proj_sup, Name} =:= Id] of
+    [] -> unknown;
+    List -> hd(List)
+  end.
 
 % Major components:
 %   erdo_commands: the API module for external commands

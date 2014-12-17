@@ -1,11 +1,12 @@
 -module(erdo_freshness).
--export([start/0, file_digest/2, store/4, check/3]).
+-export([start/0, create_tables/0, file_digest/2, store/4, check/3, elidability/2]).
 
 -include_lib("kernel/include/file.hrl").
 
 -record(erdo_task_cache, {task_name, dependencies = [], products = []}).
--record(digest, {filename, digest}).
+-record(erdo_task_elidibility, {task_name}).
 -record(erdo_cached_digest, {filename, mtime, digest}).
+-record(digest, {filename, digest}).
 
 -define(CHUNK_SIZE, 4096).
 
@@ -31,17 +32,33 @@ store(Task, Root, Deps, Prods) ->
 
 -spec(check(erdo:taskname(), file:name_all(), [file:name_all()]) -> hit | miss).
 check(Task, Root, Deps) ->
-  case mnesia:transaction(fun() ->
-          mnesia:match_object(#erdo_task_cache{
-              task_name=Task,
-              dependencies=digest_list(Root, Deps),
-              products='_'
-            }) end)
+  case mnesia:transaction(
+         fun() ->
+             case mnesia:read(erdo_task_elidibility, Task) of
+               [] -> [];
+               _ -> mnesia:match_object(#erdo_task_cache{
+                                    task_name=Task,
+                                    dependencies=digest_list(Root, Deps),
+                                    products='_'
+                                   })
+                    end
+         end)
     of
     {atomic, []} -> miss;
     {atomic, [Match]} -> check_products(Root, Match);
     {atomic, [Match|_Rest]} -> check_products(Root, Match)
   end.
+
+elidability(Task, false) ->
+  mnesia:transaction(
+    fun() ->
+        mnesia:delete({erdo_task_elidibility, Task})
+    end);
+elidability(Task, true) ->
+  mnesia:transaction(
+    fun() ->
+        mnesia:write(#erdo_task_elidibility{ task_name=Task })
+    end).
 
 digest_list(Root, Files) ->
   lists:sort([ #digest{filename=Path,digest=file_digest(Root,Path)} || Path <- Files ]).

@@ -1,8 +1,8 @@
 -module(erdo_graphs).
 -behavior(gen_server).
 %% API
--export([start_link/0,
-         requires/2,produces/2,joint_tasks/2,ordered_tasks/2,get_products/1,get_dependencies/1,build_list/1,task_batch/2]).
+-export([start_link/1,
+         requires/3,produces/3,joint_tasks/3,ordered_tasks/3,get_products/2,get_dependencies/2,build_list/2,task_batch/3]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
@@ -12,17 +12,16 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 
--define(SERVER, ?MODULE).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
+-define(VIA(WorkspaceName), {via, erdo_workspace_registry, {WorkspaceName, graph, only}}).
+start_link(Workspace) ->
+  gen_server:start_link({via, erdo_workspace_registry, {Workspace, graph, only}}, ?MODULE, [], []).
 
 -type task_name() :: string().
 -type product_name() :: file:name_all().
 -type edge_id() :: integer().
 -type normalized_product() :: string().
 
--record(task, {name :: task_name(), command :: [binary()]}).
+-record(task,    { name :: task_name(), command :: [binary()]}).
 -record(product, { name :: product_name() }).
 -record(next_id, { kind :: atom(), value :: integer() }).
 
@@ -36,63 +35,61 @@ start_link() ->
           edge_id :: edge_id(), from :: normalized_product(), to :: normalized_product() }).
 -type edge_record() :: #seq{} | #cotask{} | #production{} | #dep{}.
 
--record(provenence, {
-          edge_id :: edge_id(), task :: task_name() }).
-
+-record(provenence, { edge_id :: edge_id(), task :: task_name() }).
 -record(edge_label, { from_edges :: [edge_id()] }).
--record(gen_edge, {from :: task_name(), to :: task_name(), implied_by :: [edge_id()] }).
+-record(gen_edge,   { from :: task_name(), to :: task_name(), implied_by :: [edge_id()] }).
 
 %% @spec:	requires(First::erdo:produced(), Second::erdo:produced()) -> ok.
 %% @end
--spec(requires(erdo:produced(), erdo:produced()) -> ok).
-requires(First, Second) ->
-  gen_server:call(?SERVER, {new_dep, First, Second}).
+-spec(requires(erdo:workspace_name(), erdo:produced(), erdo:produced()) -> ok).
+requires(Workspace, First, Second) ->
+  gen_server:call(?VIA(Workspace), {new_dep, First, Second}).
 
 %% @spec:	produces(Task::erdo:task(), Product::erdo:produced()) -> ok.
 %% @end
--spec(produces(erdo:task(), erdo:produced()) -> ok).
-produces(Task, Product) ->
-  gen_server:call(?SERVER, {new_prod, Task, Product}).
+-spec(produces(erdo:workspace_name(), erdo:task(), erdo:produced()) -> ok).
+produces(Workspace, Task, Product) ->
+  gen_server:call(?VIA(Workspace), {new_prod, Task, Product}).
 
 %% @spec:	joint_tasks(First::erdo:task(), Second::erdo:task()) -> ok.
 %% @end
--spec(joint_tasks(erdo:task(), erdo:task()) -> ok).
-joint_tasks(First, Second) ->
-  gen_server:call(?SERVER, {co_task, First, Second}).
+-spec(joint_tasks(erdo:workspace_name(), erdo:task(), erdo:task()) -> ok).
+joint_tasks(Workspace, First, Second) ->
+  gen_server:call(?VIA(Workspace), {co_task, First, Second}).
 
 %% @spec:	get_products(Task::erdo:task()) -> ok.
 %% @end
--spec(get_products(erdo:task()) -> ok).
-get_products(Task) ->
-  gen_server:call(?SERVER, {products, Task}).
+-spec(get_products(erdo:workspace_name(), erdo:task()) -> ok).
+get_products(Workspace, Task) ->
+  gen_server:call(?VIA(Workspace), {products, Task}).
 
 %% @spec:	get_products(Task::erdo:task()) -> ok.
 %% @end
--spec(get_dependencies(erdo:task()) -> ok).
-get_dependencies(Task) ->
-  gen_server:call(?SERVER, {dependencies, Task}).
+-spec(get_dependencies(erdo:workspace_name(), erdo:task()) -> ok).
+get_dependencies(Workspace, Task) ->
+  gen_server:call(?VIA(Workspace), {dependencies, Task}).
 
 
 %% @spec:	ordered_tasks(First::erdo:task(), Second::erdo:task()) -> ok.
 %% @end
--spec(ordered_tasks(erdo:task(), erdo:task()) -> ok).
-ordered_tasks(First, Second) ->
-  gen_server:call(?SERVER, {task_seq, First, Second}).
+-spec(ordered_tasks(erdo:workspace_name(), erdo:task(), erdo:task()) -> ok).
+ordered_tasks(Workspace, First, Second) ->
+  gen_server:call(?VIA(Workspace), {task_seq, First, Second}).
 
 
 %% @spec:	build_list(Targets::[erdo:target()]) -> ok.
 %% @end
--spec(build_list([erdo:target()]) -> ok).
-build_list(Targets) ->
-  gen_server:call(?SERVER, {build_list, Targets}).
+-spec(build_list(erdo:workspace_name(), [erdo:target()]) -> ok).
+build_list(Workspace, Targets) ->
+  gen_server:call(?VIA(Workspace), {build_list, Targets}).
 
 %% @spec:	task_batch(Task::erdo:taskname(),Graph::erdo:graph_item()) -> ok.
 %% @doc:	Receives a batch of build-graph edges from a particular task.
 %% @end
 
--spec(task_batch(erdo:taskname(),Graph::erdo:graph_item()) -> ok).
-task_batch(Task,Graph) ->
-  gen_server:call(?SERVER, {task_batch, Task, Graph}).
+-spec(task_batch(erdo:workspace_name(), erdo:taskname(),Graph::erdo:graph_item()) -> ok).
+task_batch(Workspace, Task,Graph) ->
+  gen_server:call(?VIA(Workspace), {task_batch, Task, Graph}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -115,7 +112,7 @@ handle_call({dependencies, Task}, _From, State) ->
 handle_call({task_seq, First, Second}, _From, State) ->
   {reply, task_seq(State, First, Second), State};
 handle_call({build_list, Targets}, _From, State) ->
-  {reply, build_list(State,Targets), State};
+  {reply, handle_build_list(State,Targets), State};
 handle_call({task_batch, Task, Graph}, _From, State) ->
   {reply, process_task_batch(Task, Graph, State), State};
 
@@ -383,8 +380,8 @@ task_products_query(#state{vertices=Vertices, edges=Edges}, TaskName) ->
                     Product#product.name =:= Production#production.produces,
                     Production#production.task =:= TaskName ]).
 
--spec(build_list(digraph:graph(), [erdo:target()]) -> [erdo:build_spec()]).
-build_list(State, Targets) ->
+-spec(handle_build_list(digraph:graph(), [erdo:target()]) -> [erdo:build_spec()]).
+handle_build_list(State, Targets) ->
   SeqGraph = seq_graph(State),
   AlsoGraph = also_graph(State),
   TargetTasks = [Taskname || {task, Taskname} <- tasks_from_targets(State, Targets)],
@@ -483,10 +480,7 @@ determining_edges(SeqGraph, AlsoGraph, Tasknames) ->
 collect_edge_ids(Subgraph, EdgeSet) ->
   lists:foldl(
     fun({_E, _V1, _V2, #edge_label{from_edges=Edges}}, Set) ->
-        lists:foldl(fun gb_sets:add/2, Set, Edges);
-       (X, Y) -> ?debugVal(X), ?debugVal(Y),
-                 {E, Label} = X,
-                 Set = Y
+        lists:foldl(fun gb_sets:add/2, Set, Edges)
     end,
     EdgeSet, [ digraph:edge(Subgraph, E) || E <- digraph:edges(Subgraph) ]).
 
@@ -585,19 +579,6 @@ tasks_from_targets(State, Targets) ->
         end
     end,
     Targets ).
-
-
--type edge() :: term().
-%
-% Update old/new graph edges
--spec(task_update(#state{}, erdo:task(), [edge()], [edge()]) -> ok).
-task_update(Graphs, Task, OldEdges, NewEdges) ->
-  ok.
-
-% Edges declared by task
--spec(declared_by(#state{}, erdo:task()) -> [edge()]).
-declared_by(Graphs, Task) ->
-  ok.
 
 
 find_product_vertex(State, ProductName) ->

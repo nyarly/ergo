@@ -1,7 +1,7 @@
 -module(erdo_workspace_sup).
 -behavior(supervisor).
 
--export([start_link/0]).
+-export([start_link/1]).
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
