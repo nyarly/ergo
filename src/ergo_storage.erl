@@ -1,4 +1,4 @@
--module(erdo_storage).
+-module(ergo_storage).
 -export([start/0, create_table/3]).
 
 %% @spec:	start() -> {ok}.
@@ -8,7 +8,7 @@
 start() ->
   ok = create_schema(),
   ok = start_mnesia(),
-  TableList = lists:flatten([erdo_freshness:create_tables()]),
+  TableList = lists:flatten([ergo_freshness:create_tables()]),
   ok = mnesia:wait_for_tables(TableList, 10000),
   ok.
 

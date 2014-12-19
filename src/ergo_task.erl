@@ -1,11 +1,11 @@
--module(erdo_task).
+-module(ergo_task).
 -behavior(gen_server).
 %% API
 -export([current/0, start_link/2, task_name/1, add_dep/4, add_prod/4, add_co/4, add_seq/4, skip/2, not_elidable/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(VIA(Workspace, Taskname), {via, erdo_workspace_registry, {Workspace, task, Taskname}}).
+-define(VIA(Workspace, Taskname), {via, ergo_workspace_registry, {Workspace, task, Taskname}}).
 
 -record(state, {name, runspec, cmdport, graphitems, elidable}).
 start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir) ->
@@ -14,32 +14,32 @@ start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir) ->
 task_name(TaskServer) ->
   gen_server:call(TaskServer, task_name).
 
--spec(current() -> erdo:task_name() | no_task).
+-spec(current() -> ergo:task_name() | no_task).
 current() ->
   no_task.
 
 
--spec(add_dep(erdo:workspace_name(), erdo:task_name(), erdo:product_name(), erdo:product_name()) -> ok).
+-spec(add_dep(ergo:workspace_name(), erdo:task_name(), erdo:product_name(), erdo:product_name()) -> ok).
 add_dep(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_dep, From, To}).
 
--spec(add_prod(erdo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:product_name()) -> ok).
+-spec(add_prod(ergo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:product_name()) -> ok).
 add_prod(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_prod, From, To}).
 
--spec(add_co(erdo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
+-spec(add_co(ergo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
 add_co(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_co, From, To}).
 
--spec(add_seq(erdo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
+-spec(add_seq(ergo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
 add_seq(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_seq, From, To}).
 
--spec(not_elidable(erdo:workspace_name(), erdo:task_name()) -> ok).
+-spec(not_elidable(ergo:workspace_name(), erdo:task_name()) -> ok).
 not_elidable(Workspace, Taskname) ->
   gen_server:call(?VIA(Workspace, Taskname), {elidable}).
 
--spec(skip(erdo:workspace_name(), erdo:task_name()) -> ok).
+-spec(skip(ergo:workspace_name(), erdo:task_name()) -> ok).
 skip(Workspace, Taskname) ->
   gen_server:call(?VIA(Workspace, Taskname), {skip}).
 
@@ -62,12 +62,12 @@ init({TaskSpec, WorkspaceDir}) ->
           stderr_to_stdout
         ]
       ),
-      erdo_events:task_started({task, TaskName}),
+      ergo_events:task_started({task, TaskName}),
       {ok, #state{name=TaskName, runspec=TaskSpec, cmdport=CmdPort, graphitems=[], elidable=true}}
   end.
 
 task_running(Name) ->
-  lists:member(Name, erdo_task_soop:running_tasks()).
+  lists:member(Name, ergo_task_soop:running_tasks()).
 
 handle_call(task_name, _From, State) ->
   {reply, State#state.name, State};
@@ -118,7 +118,7 @@ make_not_elidable(State) ->
   State#state{elidable=false}.
 
 skipped(State=#state{name=Name, cmdport=CmdPort}) ->
-  erdo_events:task_skipped({task, Name}),
+  ergo_events:task_skipped({task, Name}),
   port_close(CmdPort),
   State#state{graphitems=[]}.
 
@@ -131,8 +131,8 @@ exited(_Reason,_Name) ->
   ok.
 
 exit_status(0,Name,Graph,Elides) ->
-  erdo_graphs:task_batch(Name, Graph),
-  erdo_graphs:elidability(Name, Elides),
-  erdo_events:task_completed({task, Name});
+  ergo_graphs:task_batch(Name, Graph),
+  ergo_graphs:elidability(Name, Elides),
+  ergo_events:task_completed({task, Name});
 exit_status(_Status,Name,_Graph) ->
-  erdo_events:task_failed({task, Name}).
+  ergo_events:task_failed({task, Name}).

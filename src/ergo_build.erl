@@ -1,4 +1,4 @@
--module(erdo_build).
+-module(ergo_build).
 -behavior(gen_event).
 
 %% API
@@ -10,7 +10,7 @@
 
 -record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts, waiters}).
 
--define(VIA(Workspace), {via, erdo_workspace_registry, {Workspace, events, only}}).
+-define(VIA(Workspace), {via, ergo_workspace_registry, {Workspace, events, only}}).
 -define(ID(Workspace, Id), {?MODULE, {Workspace, Id}}).
 -define(RUN_LIMIT,20).
 
@@ -31,7 +31,7 @@ link_to(Workspace, Id, Pid) ->
 %%% gen_event callbacks
 %%%===================================================================
 init({WorkspaceName, BuildId, Targets}) ->
-  BuildSpec=erdo_graphs:build_spec(Targets),
+  BuildSpec=ergo_graphs:build_spec(Targets),
   {ok, #state{
       requested_targets=Targets,
       complete_tasks=[],
@@ -83,7 +83,7 @@ task_executable(TaskPath, Taskname) ->
 task_completed(Task, State = #state{build_spec=BuildSpec, workspace_dir=WorkspaceDir, complete_tasks=PrevCompleteTasks}) ->
   RunCounts = State#state.run_counts,
   CompleteTasks = [Task | PrevCompleteTasks],
-  erdo_freshness:store(Task, WorkspaceDir, task_deps(Task), task_products(Task)),
+  ergo_freshness:store(Task, WorkspaceDir, task_deps(Task), task_products(Task)),
   start_tasks(WorkspaceDir, BuildSpec, CompleteTasks, RunCounts),
   State#state{
     complete_tasks=CompleteTasks,
@@ -107,22 +107,22 @@ start_task(WorkspaceRoot, Task, RunCount) ->
   [ RelExe | Args ] = Task,
   {ok, Io, FullExe} = task_executable([WorkspaceRoot], RelExe),
   file:close(Io),
-  start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount, erdo_freshness:check(Task, WorkspaceRoot, [FullExe | erdo_graph:dependencies(Task)])).
+  start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount, ergo_freshness:check(Task, WorkspaceRoot, [FullExe | erdo_graph:dependencies(Task)])).
 
 build_completed(#state{waiters=Waiters,build_id=BuildId,requested_targets=Targets}) ->
   [exit(Waiter,{build_completed,BuildId,Targets}) || Waiter <- Waiters].
 
 start_task(_WorkspaceRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
-  erdo_events:task_skipped({task, Task}),
+  ergo_events:task_skipped({task, Task}),
   ok;
 start_task(_WorkspaceRoot, TaskSpec, _RunCount, _Fresh) ->
-  erdo_workspace:start_task(TaskSpec).
+  ergo_workspace:start_task(TaskSpec).
 
 task_deps(Task) ->
-  erdo_graphs:get_dependencies({task, Task}).
+  ergo_graphs:get_dependencies({task, Task}).
 
 task_products(Task) ->
-  erdo_graphs:get_products({task, Task}).
+  ergo_graphs:get_products({task, Task}).
 
 eligible_tasks(BuildSpec, CompleteTasks) ->
   lists:subtract(

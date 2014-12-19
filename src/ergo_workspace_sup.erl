@@ -1,4 +1,4 @@
--module(erdo_workspace_sup).
+-module(ergo_workspace_sup).
 -behavior(supervisor).
 
 -export([start_link/1]).
@@ -7,7 +7,7 @@
 -define(SERVER, ?MODULE).
 
 start_link(WorkspaceName) ->
-  supervisor:start_link({via, erdo_workspace_registry, {WorkspaceName, supervisor, only}}, ?MODULE, WorkspaceName).
+  supervisor:start_link({via, ergo_workspace_registry, {WorkspaceName, supervisor, only}}, ?MODULE, WorkspaceName).
 
 supervised(Workspace, Name, Module) ->
   supervised(Workspace, Name, Module, worker).
@@ -17,10 +17,10 @@ supervised(Workspace, Name, Module, Type) ->
 
 init(WorkspaceName) ->
   Procs = [
-           supervised(WorkspaceName, builds, erdo_builds_soop, supervisor),
-           supervised(WorkspaceName, graphs, erdo_graphs),
+           supervised(WorkspaceName, builds, ergo_builds_soop, supervisor),
+           supervised(WorkspaceName, graphs, ergo_graphs),
            { events, { gen_event, start_link,
-                       [{via, erdo_workspace_registry, {WorkspaceName, events, only}}]
+                       [{via, ergo_workspace_registry, {WorkspaceName, events, only}}]
                      },
              permanent, 5, worker, dynamic}
           ],

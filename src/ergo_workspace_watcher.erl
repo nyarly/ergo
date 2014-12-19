@@ -1,4 +1,4 @@
--module(erdo_workspace_watcher).
+-module(ergo_workspace_watcher).
 -behavior(gen_event).
 
 %% API
@@ -18,7 +18,7 @@ add_to_sup(Workspace) ->
 
 add_to_sup(Workspace, Args) ->
   Handler = {?MODULE, make_ref()},
-  gen_event:add_sup_handler({via, erdo_workspace_registry, {Workspace, events, only}},
+  gen_event:add_sup_handler({via, ergo_workspace_registry, {Workspace, events, only}},
                             Handler, Args),
   Handler.
 

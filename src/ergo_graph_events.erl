@@ -7,7 +7,7 @@
 %%% Created :  Fri Oct 17 15:08:47 2014 by Judson Lester
 %%%-------------------------------------------------------------------
 
--module(erdo_graph_events).
+-module(ergo_graph_events).
 -behavior(gen_event).
 
 %% API
@@ -45,13 +45,13 @@ init([GraphRef]) ->
   {ok, #state{graphs=GraphRef}}.
 
 handle_event({requirement_noted, {First, Second}}, State) ->
-  erdo_graphs:requires(State#state.graphs, First, Second);
+  ergo_graphs:requires(State#state.graphs, First, Second);
 handle_event({production_noted, {First, Second}}, State) ->
-  erdo_graphs:produces(State#state.graphs, First, Second);
+  ergo_graphs:produces(State#state.graphs, First, Second);
 handle_event({tasks_joint, {First, Second}}, State) ->
-  erdo_graphs:joint_tasks(State#state.graphs, First, Second);
+  ergo_graphs:joint_tasks(State#state.graphs, First, Second);
 handle_event({tasks_ordered, {First, Second}}, State) ->
-  erdo_graphs:order_tasks(State#state.graphs, First, Second);
+  ergo_graphs:order_tasks(State#state.graphs, First, Second);
 handle_event(_Event, State) ->
   {ok, State}.
 

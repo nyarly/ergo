@@ -4,7 +4,7 @@
 %%% @end
 %%% Created :  Sun Oct 19 20:26:27 2014 by Judson Lester
 %%%-------------------------------------------------------------------
--module(erdo_tasks_soop).
+-module(ergo_tasks_soop).
 -behavior(supervisor).
 %% API
 -export([start_link/0, start_task/3, running_tasks/0]).
@@ -28,7 +28,7 @@ task_count() ->
   proplists:get_value(active, supervisor:count_children(?SERVER)).
 
 running_tasks() ->
-  [erdo_task:task_name(TaskPid) || {_Id, TaskPid, _Type, _Mods} <-
+  [ergo_task:task_name(TaskPid) || {_Id, TaskPid, _Type, _Mods} <-
                                    supervisor:which_children(?SERVER), is_pid(TaskPid)].
 
 %%% Supervisor callbacks
@@ -40,5 +40,5 @@ init([]) ->
   Restart = permanent,
   Shutdown = 2000,
   Type = worker,
-  AChild = {ignored, {erdo_task, start_link, []}, Restart, Shutdown, Type, [erdo_task]},
+  AChild = {ignored, {ergo_task, start_link, []}, Restart, Shutdown, Type, [erdo_task]},
   {ok, {SupFlags, [AChild]}}.

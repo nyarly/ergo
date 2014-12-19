@@ -1,4 +1,4 @@
-{application, erdo, [
+{application, ergo, [
 	{description, ""},
 	{vsn, "0.1.0"},
 	{modules, []},
@@ -9,6 +9,6 @@
                 crypto,
                 mnesia
 	]},
-	{mod, {erdo_app, []}},
+	{mod, {ergo_app, []}},
 	{env, []}
 ]}.

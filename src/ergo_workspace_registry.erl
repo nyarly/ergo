@@ -1,4 +1,4 @@
--module(erdo_workspace_registry).
+-module(ergo_workspace_registry).
 -behavior(gen_server).
 %% API
 -export([start_link/0]).
@@ -68,7 +68,7 @@ reg_key_for(Workspace,Role,Name) ->
   #registry_key{workspace=Workspace,role=Role,name=Name}.
 
 build_state() ->
-  #state{registry=ets:new(erdo_registration, set, {keypos, #registration.key})}.
+  #state{registry=ets:new(ergo_registration, set, {keypos, #registration.key})}.
 
 reg_name(RegKey, Pid, RegTab) ->
   ets:insert(RegTab, #registration{key=RegKey, pid=Pid}).

@@ -1,2 +1,2 @@
-PROJECT = erdo
+PROJECT = ergo
 include erlang.mk

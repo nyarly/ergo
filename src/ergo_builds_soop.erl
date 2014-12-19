@@ -4,7 +4,7 @@
 %%% @end
 %%% Created :  Sun Oct 19 20:26:27 2014 by Judson Lester
 %%%-------------------------------------------------------------------
--module(erdo_builds_soop).
+-module(ergo_builds_soop).
 -behavior(supervisor).
 %% API
 -export([start_link/1, start_build/2, running_builds/1]).
@@ -12,7 +12,7 @@
 -export([init/1]).
 -define(SERVER, ?MODULE).
 
--define(VIA(WorkspaceName), {via, erdo_workspace_registry, {WorkspaceName, builds, only}}).
+-define(VIA(WorkspaceName), {via, ergo_workspace_registry, {WorkspaceName, builds, only}}).
 
 %%% API functions
 start_link([WorkspaceName]) ->
@@ -31,6 +31,6 @@ init(WorkspaceName) ->
   Restart = permanent,
   Shutdown = 2000,
   Type = worker,
-  AChild = {ignored, {erdo_build, start_link, [WorkspaceName]},
-    Restart, Shutdown, Type, [erdo_build]},
+  AChild = {ignored, {ergo_build, start_link, [WorkspaceName]},
+    Restart, Shutdown, Type, [ergo_build]},
   {ok, {SupFlags, [AChild]}}.

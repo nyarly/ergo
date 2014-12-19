@@ -1,4 +1,4 @@
--module(erdo_server).
+-module(ergo_server).
 -behavior(gen_server).
 %% API
 -export([start_link/0]).
@@ -12,7 +12,7 @@
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec(get_workspace(erdo:workspace_name()) -> pid()).
+-spec(get_workspace(ergo:workspace_name()) -> pid()).
 get_workspace(Workspace) ->
   get_server:call(?SERVER, {get_workspace, Workspace}).
 
@@ -43,7 +43,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_get_workspace(Workspace) ->
-  case erdo_sup:find_workspace(Workspace) of
-    unknown -> erdo_sup:start_workspace(Workspace);
+  case ergo_sup:find_workspace(Workspace) of
+    unknown -> ergo_sup:start_workspace(Workspace);
     Pid -> Pid
   end.
