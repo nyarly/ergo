@@ -19,27 +19,27 @@ current() ->
   no_task.
 
 
--spec(add_dep(ergo:workspace_name(), erdo:task_name(), erdo:product_name(), erdo:product_name()) -> ok).
+-spec(add_dep(ergo:workspace_name(), ergo:task_name(), ergo:product_name(), ergo:product_name()) -> ok).
 add_dep(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_dep, From, To}).
 
--spec(add_prod(ergo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:product_name()) -> ok).
+-spec(add_prod(ergo:workspace_name(), ergo:task_name(), ergo:task_name(), ergo:product_name()) -> ok).
 add_prod(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_prod, From, To}).
 
--spec(add_co(ergo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
+-spec(add_co(ergo:workspace_name(), ergo:task_name(), ergo:task_name(), ergo:task_name()) -> ok).
 add_co(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_co, From, To}).
 
--spec(add_seq(ergo:workspace_name(), erdo:task_name(), erdo:task_name(), erdo:task_name()) -> ok).
+-spec(add_seq(ergo:workspace_name(), ergo:task_name(), ergo:task_name(), ergo:task_name()) -> ok).
 add_seq(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_seq, From, To}).
 
--spec(not_elidable(ergo:workspace_name(), erdo:task_name()) -> ok).
+-spec(not_elidable(ergo:workspace_name(), ergo:task_name()) -> ok).
 not_elidable(Workspace, Taskname) ->
   gen_server:call(?VIA(Workspace, Taskname), {elidable}).
 
--spec(skip(ergo:workspace_name(), erdo:task_name()) -> ok).
+-spec(skip(ergo:workspace_name(), ergo:task_name()) -> ok).
 skip(Workspace, Taskname) ->
   gen_server:call(?VIA(Workspace, Taskname), {skip}).
 

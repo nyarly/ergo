@@ -73,9 +73,9 @@ check_products(Root, CacheMatch) ->
   end.
 
 create_tables() ->
-  ok = ergo_storage:create_table(erdo_task_cache, bag, record_info(fields, erdo_task_cache)),
-  ok = ergo_storage:create_table(erdo_cached_digest, set, record_info(fields, erdo_cached_digest)),
-  [ergo_task_cache, erdo_cached_digest].
+  ok = ergo_storage:create_table(ergo_task_cache, bag, record_info(fields, ergo_task_cache)),
+  ok = ergo_storage:create_table(ergo_cached_digest, set, record_info(fields, ergo_cached_digest)),
+  [ergo_task_cache, ergo_cached_digest].
 
 digest_file(Root, Path) ->
   {ok, Io, _FullName} = file:path_open([Root], Path, [read, raw, binary]),

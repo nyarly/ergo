@@ -39,55 +39,55 @@ start_link(Workspace) ->
 -record(edge_label, { from_edges :: [edge_id()] }).
 -record(gen_edge,   { from :: task_name(), to :: task_name(), implied_by :: [edge_id()] }).
 
-%% @spec:	requires(First::ergo:produced(), Second::erdo:produced()) -> ok.
+%% @spec:	requires(First::ergo:produced(), Second::ergo:produced()) -> ok.
 %% @end
--spec(requires(ergo:workspace_name(), erdo:produced(), erdo:produced()) -> ok).
+-spec(requires(ergo:workspace_name(), ergo:produced(), ergo:produced()) -> ok).
 requires(Workspace, First, Second) ->
   gen_server:call(?VIA(Workspace), {new_dep, First, Second}).
 
-%% @spec:	produces(Task::ergo:task(), Product::erdo:produced()) -> ok.
+%% @spec:	produces(Task::ergo:task(), Product::ergo:produced()) -> ok.
 %% @end
--spec(produces(ergo:workspace_name(), erdo:task(), erdo:produced()) -> ok).
+-spec(produces(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
 produces(Workspace, Task, Product) ->
   gen_server:call(?VIA(Workspace), {new_prod, Task, Product}).
 
-%% @spec:	joint_tasks(First::ergo:task(), Second::erdo:task()) -> ok.
+%% @spec:	joint_tasks(First::ergo:task(), Second::ergo:task()) -> ok.
 %% @end
--spec(joint_tasks(ergo:workspace_name(), erdo:task(), erdo:task()) -> ok).
+-spec(joint_tasks(ergo:workspace_name(), ergo:task(), ergo:task()) -> ok).
 joint_tasks(Workspace, First, Second) ->
   gen_server:call(?VIA(Workspace), {co_task, First, Second}).
 
 %% @spec:	get_products(Task::ergo:task()) -> ok.
 %% @end
--spec(get_products(ergo:workspace_name(), erdo:task()) -> ok).
+-spec(get_products(ergo:workspace_name(), ergo:task()) -> ok).
 get_products(Workspace, Task) ->
   gen_server:call(?VIA(Workspace), {products, Task}).
 
 %% @spec:	get_products(Task::ergo:task()) -> ok.
 %% @end
--spec(get_dependencies(ergo:workspace_name(), erdo:task()) -> ok).
+-spec(get_dependencies(ergo:workspace_name(), ergo:task()) -> ok).
 get_dependencies(Workspace, Task) ->
   gen_server:call(?VIA(Workspace), {dependencies, Task}).
 
 
-%% @spec:	ordered_tasks(First::ergo:task(), Second::erdo:task()) -> ok.
+%% @spec:	ordered_tasks(First::ergo:task(), Second::ergo:task()) -> ok.
 %% @end
--spec(ordered_tasks(ergo:workspace_name(), erdo:task(), erdo:task()) -> ok).
+-spec(ordered_tasks(ergo:workspace_name(), ergo:task(), ergo:task()) -> ok).
 ordered_tasks(Workspace, First, Second) ->
   gen_server:call(?VIA(Workspace), {task_seq, First, Second}).
 
 
 %% @spec:	build_list(Targets::[ergo:target()]) -> ok.
 %% @end
--spec(build_list(ergo:workspace_name(), [erdo:target()]) -> ok).
+-spec(build_list(ergo:workspace_name(), [ergo:target()]) -> ok).
 build_list(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {build_list, Targets}).
 
-%% @spec:	task_batch(Task::ergo:taskname(),Graph::erdo:graph_item()) -> ok.
+%% @spec:	task_batch(Task::ergo:taskname(),Graph::ergo:graph_item()) -> ok.
 %% @doc:	Receives a batch of build-graph edges from a particular task.
 %% @end
 
--spec(task_batch(ergo:workspace_name(), erdo:taskname(),Graph::erdo:graph_item()) -> ok).
+-spec(task_batch(ergo:workspace_name(), ergo:taskname(),Graph::ergo:graph_item()) -> ok).
 task_batch(Workspace, Task,Graph) ->
   gen_server:call(?VIA(Workspace), {task_batch, Task, Graph}).
 
@@ -155,7 +155,7 @@ cleanup_state(State) ->
   ets:delete(State#state.provenence),
   ok.
 
--spec(process_task_batch(ergo:task_name(), [erdo:graph_item()], digraph:graph()) -> ok).
+-spec(process_task_batch(ergo:task_name(), [ergo:graph_item()], digraph:graph()) -> ok).
 process_task_batch(Taskname, ReceivedItems, State) ->
   CurrentItems = normalize_items(State, ReceivedItems),
   KnownItems = items_for_task(State, Taskname),
@@ -259,24 +259,24 @@ maybe_delete_table(Table) ->
   ets:delete(Table).
 
 % Insert a dependency
--spec(new_dep(digraph:graph(), ergo:produced(), erdo:produced()) -> digraph:edge()).
+-spec(new_dep(digraph:graph(), ergo:produced(), ergo:produced()) -> digraph:edge()).
 new_dep(State, {product, ProductName}, {product, DependsOn}) ->
   add_product(State, ProductName), add_product(State, DependsOn),
   add_statement(State, #dep{from=ProductName,to=DependsOn}).
 
--spec(new_prod(digraph:graph(), ergo:task(), erdo:produced()) -> digraph:edge()).
+-spec(new_prod(digraph:graph(), ergo:task(), ergo:produced()) -> digraph:edge()).
 new_prod(State, {task, TaskName}, {product, ProductName}) ->
   add_task(State, TaskName), add_product(State, ProductName),
   add_statement(State, #production{task=TaskName,produces=ProductName}).
 
 % Insert a co-task edge
--spec(co_task(digraph:graph(), ergo:task(), erdo:task()) -> digraph:edge()).
+-spec(co_task(digraph:graph(), ergo:task(), ergo:task()) -> digraph:edge()).
 co_task(State, {task, Task}, {task, WithOther}) ->
   add_task(State, Task), add_task(State, WithOther),
   add_statement(State, #cotask{task=Task,also=WithOther}).
 
 % Insert a task sequencing edge
--spec(task_seq(digraph:graph(), ergo:task(), erdo:task()) -> digraph:edge()).
+-spec(task_seq(digraph:graph(), ergo:task(), ergo:task()) -> digraph:edge()).
 task_seq(State, {task, First}, {task, Second}) ->
   add_task(State, First), add_task(State, Second),
   add_statement(State, #seq{before=First, then=Second}).
@@ -325,7 +325,7 @@ next_edge_id(#state{vertices=Vertices}) ->
   ets:update_counter(Vertices, edge_ids, {#next_id.value, 1}).
 
 % Products for a task
--spec(products(digraph:graph(), ergo:task()) -> [erdo:produced()]).
+-spec(products(digraph:graph(), ergo:task()) -> [ergo:produced()]).
 products(State, {task, TaskName}) ->
   qlc:eval(qlc:q([ E#production.produces || E <- ets:table(State#state.edges),
                                             E#production.task =:= TaskName ])).
@@ -342,13 +342,13 @@ task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
     _ -> {err, {violated_invariant, single_producer}}
   end.
 
--spec(dependencies(digraph:graph(), ergo:produced() | erdo:task()) -> [erdo:produced()]).
+-spec(dependencies(digraph:graph(), ergo:produced() | ergo:task()) -> [ergo:produced()]).
 dependencies(State, {product, ProductName}) ->
   prod_deps(State, ProductName);
 dependencies(State, {task, TaskName}) ->
   task_deps(State, TaskName).
 
--spec(prod_deps(#state{}, ergo:productname()) -> [erdo:produced()]).
+-spec(prod_deps(#state{}, ergo:productname()) -> [ergo:produced()]).
 prod_deps(State, ProductName) ->
   [ {product, PName} || PName <- product_dependencies(State, ProductName) ].
 
@@ -380,7 +380,7 @@ task_products_query(#state{vertices=Vertices, edges=Edges}, TaskName) ->
                     Product#product.name =:= Production#production.produces,
                     Production#production.task =:= TaskName ]).
 
--spec(handle_build_list(digraph:graph(), [ergo:target()]) -> [erdo:build_spec()]).
+-spec(handle_build_list(digraph:graph(), [ergo:target()]) -> [ergo:build_spec()]).
 handle_build_list(State, Targets) ->
   SeqGraph = seq_graph(State),
   AlsoGraph = also_graph(State),
@@ -569,7 +569,7 @@ task_to_task_dep_query(#state{edges=Edges}) ->
         ]).
 
 
--spec(tasks_from_targets(digraph:graph(), [ergo:target()]) -> [erdo:task()]).
+-spec(tasks_from_targets(digraph:graph(), [ergo:target()]) -> [ergo:task()]).
 tasks_from_targets(State, Targets) ->
   lists:map(
     fun(Target) ->

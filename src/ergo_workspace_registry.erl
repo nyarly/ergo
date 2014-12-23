@@ -3,15 +3,15 @@
 %% API
 -export([start_link/0]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, link_to/1]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, link_to/1, name_from_id/1, id_from_name/1]).
 
 -export([register_name/2, unregister_name/1, whereis_name/1, send/2]).
 
 -type(roletype() :: supervisor | build | server | graph | events).
 -define(SERVER, ?MODULE).
--record(state, {registry}).
+-record(state, {item_index::integer(), registry}).
 -record(registry_key, {workspace::atom(),role::roletype(),name::term()}).
--record(registration, {key::#registry_key{},pid::pid()}).
+-record(registration, {key::#registry_key{},pid::pid(),index::integer()}).
 
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -28,6 +28,12 @@ whereis_name({Workspace,Role,Name}) ->
 send({Workspace,Role,Name}, Message) ->
   gen_server:call(?SERVER, {send, reg_key_for(Workspace,Role,Name), Message}).
 
+name_from_id(Id) ->
+  gen_server:call(?SERVER, {name_for_id, Id}).
+
+id_from_name({Workspace,Role,Name}) ->
+  gen_server:call(?SERVER, {process_id, reg_key_for(Workspace,Role,Name)}).
+
 link_to(ViaTuple) ->
   link(whereis_name(ViaTuple)).
 
@@ -37,14 +43,18 @@ link_to(ViaTuple) ->
 init([]) ->
   {ok, build_state()}.
 
-handle_call({register_name, RegKey, Pid}, _From, State=#state{registry=RegTab}) ->
-  {reply, reg_name(RegKey, Pid, RegTab), State};
+handle_call({register_name, RegKey, Pid}, _From, State=#state{registry=RegTab,item_index=Index}) ->
+  {reply, reg_name(RegKey, Pid, RegTab, Index), State#state{item_index=Index+1}};
 handle_call({unregister_name, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, unreg_name(RegKey, RegTab), State};
 handle_call({whereis_name, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, lookup(RegKey, RegTab), State};
 handle_call({send, RegKey, Message}, _From, State=#state{registry=RegTab}) ->
   {reply, send(RegKey, Message, RegTab), State};
+handle_call({process_id, RegKey}, _From, State=#state{registry=RegTab}) ->
+  {reply, process_id(RegKey, RegTab), State};
+handle_call({name_for_id, RegKey}, _From, State=#state{registry=RegTab}) ->
+  {reply, name_for_id(RegKey, RegTab), State};
 handle_call(_Request, _From, State) ->
   {reply, unknown_request, State}.
 
@@ -67,11 +77,16 @@ code_change(_OldVsn, State, _Extra) ->
 reg_key_for(Workspace,Role,Name) ->
   #registry_key{workspace=Workspace,role=Role,name=Name}.
 
-build_state() ->
-  #state{registry=ets:new(ergo_registration, set, {keypos, #registration.key})}.
+index_for(Role,Index) ->
+  RoleB = erlang:atom_to_binary(Role),
+  IndexB = erlang:integer_to_binary(Index),
+  <<RoleB/binary,<<" ">>,IndexB/binary>>.
 
-reg_name(RegKey, Pid, RegTab) ->
-  ets:insert(RegTab, #registration{key=RegKey, pid=Pid}).
+build_state() ->
+  #state{item_index=1, registry=ets:new(ergo_registration, set, {keypos, #registration.key})}.
+
+reg_name(RegKey=#registry_key{role=Role}, Pid, RegTab, Index) ->
+  ets:insert(RegTab, #registration{key=RegKey, pid=Pid, index=index_for(Role,Index)}).
 
 unreg_name(RegKey, RegTab) ->
   ets:delete(RegTab, RegKey).
@@ -81,6 +96,20 @@ lookup(RegKey, RegTab) ->
     #registration{pid=Pid} -> Pid;
     _ -> unknown
   end.
+
+process_id(RegKey, RegTab) ->
+  case hd(ets:lookup(RegTab, RegKey)) of
+    #registration{index=Id} -> Id;
+    _ -> unknown
+  end.
+
+name_for_id(ProcId, RegTab) ->
+  case hd(ets:match_object(RegTab, #registration{index=ProcId, _='_'})) of
+    #registration{key=RegKey} -> RegKey;
+    _ -> unknown
+  end.
+
+
 
 send(RegKey, Message, RegTab) ->
   case lookup(RegKey, RegTab) of

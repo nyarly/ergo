@@ -5,8 +5,7 @@
 -export([start/3]).
 
 %% gen_event callbacks
--export([init/1, handle_event/2, handle_call/2,
-  handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2, code_change/3, link_to/3]).
 
 -record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts, waiters}).
 
@@ -107,16 +106,17 @@ start_task(WorkspaceRoot, Task, RunCount) ->
   [ RelExe | Args ] = Task,
   {ok, Io, FullExe} = task_executable([WorkspaceRoot], RelExe),
   file:close(Io),
-  start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount, ergo_freshness:check(Task, WorkspaceRoot, [FullExe | erdo_graph:dependencies(Task)])).
-
-build_completed(#state{waiters=Waiters,build_id=BuildId,requested_targets=Targets}) ->
-  [exit(Waiter,{build_completed,BuildId,Targets}) || Waiter <- Waiters].
+  start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount,
+             ergo_freshness:check(Task, WorkspaceRoot, [FullExe | ergo_graph:dependencies(Task)])).
 
 start_task(_WorkspaceRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
   ergo_events:task_skipped({task, Task}),
   ok;
 start_task(_WorkspaceRoot, TaskSpec, _RunCount, _Fresh) ->
   ergo_workspace:start_task(TaskSpec).
+
+build_completed(#state{waiters=Waiters,build_id=BuildId,requested_targets=Targets}) ->
+  [exit(Waiter,{build_completed,BuildId,Targets}) || Waiter <- Waiters].
 
 task_deps(Task) ->
   ergo_graphs:get_dependencies({task, Task}).

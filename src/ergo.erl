@@ -1,9 +1,10 @@
 -module(ergo).
 -export_type([produced/0, task/0, taskname/0, taskspec/0, build_spec/0, target/0, command_result/0, graph_item/0]).
 
--export([watch/0, watch/1, wait_on_build/1, wait_on_build/2, run_build/1, run_build/2,
-         add_product/2, add_file_dep/2, add_cotask/2, add_task_seq/2, this_task_preceeds/1, this_task_follows/1,
-         also_run/1, run_whenever/1, dont_elide/0, skip/0]).
+-export([watch/0, watch/1, wait_on_build/1, wait_on_build/2, run_build/1,
+         run_build/2, add_product/2, add_file_dep/2, add_cotask/2,
+         add_task_seq/2, this_task_preceeds/1, this_task_follows/1, also_run/1,
+         run_whenever/1, dont_elide/0, skip/0, setup/0]).
 
 -type produced() :: {produced, productname()}.
 -type task() :: {task, taskname()}.
@@ -28,6 +29,9 @@
 watch() ->
   watch(ergo_workspace:current()).
 
+setup() ->
+  ergo_workspace:setup().
+
 -spec(wait_on_build(build_id()) -> command_response()).
 wait_on_build(Id) ->
   wait_on_build(ergo_workspace:current(), Id).
@@ -38,19 +42,19 @@ run_build(Targets) ->
 
 -spec(add_product(task(), product()) -> command_response()).
 add_product(Task, Product) ->
-  add_product(ergo_workspace:current(), erdo_task:current(), Task, Product).
+  add_product(ergo_workspace:current(), ergo_task:current(), Task, Product).
 
 -spec(add_file_dep(product(), product()) -> command_response()).
 add_file_dep(From, To) ->
-  add_file_dep(ergo_workspace:current(), erdo_task:current(), From, To).
+  add_file_dep(ergo_workspace:current(), ergo_task:current(), From, To).
 
 -spec(add_cotask(task(), task()) -> command_response()).
 add_cotask(Task, Also) ->
-  add_cotask(ergo_workspace:current(), erdo_task:current(), Task, Also).
+  add_cotask(ergo_workspace:current(), ergo_task:current(), Task, Also).
 
 -spec(add_task_seq(task(), task()) -> command_response()).
 add_task_seq(First, Second) ->
-  add_task_seq(ergo_workspace:current(), erdo_task:current(), First, Second).
+  add_task_seq(ergo_workspace:current(), ergo_task:current(), First, Second).
 
 -spec(this_task_preceeds(task()) -> command_response()).
 this_task_preceeds(Other) ->

@@ -40,5 +40,5 @@ init([]) ->
   Restart = permanent,
   Shutdown = 2000,
   Type = worker,
-  AChild = {ignored, {ergo_task, start_link, []}, Restart, Shutdown, Type, [erdo_task]},
+  AChild = {ignored, {ergo_task, start_link, []}, Restart, Shutdown, Type, [ergo_task]},
   {ok, {SupFlags, [AChild]}}.
