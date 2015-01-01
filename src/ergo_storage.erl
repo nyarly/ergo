@@ -4,7 +4,7 @@
 %% @spec:	start() -> {ok}.
 %% @doc:	Starts up Mnesia, waits for tables
 %% @end
--spec(start() -> {ok,pid()}).
+-spec(start() -> ok).
 start() ->
   ok = create_schema(),
   ok = start_mnesia(),

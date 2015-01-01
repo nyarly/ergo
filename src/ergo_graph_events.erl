@@ -51,7 +51,7 @@ handle_event({production_noted, {First, Second}}, State) ->
 handle_event({tasks_joint, {First, Second}}, State) ->
   ergo_graphs:joint_tasks(State#state.graphs, First, Second);
 handle_event({tasks_ordered, {First, Second}}, State) ->
-  ergo_graphs:order_tasks(State#state.graphs, First, Second);
+  ergo_graphs:ordered_tasks(State#state.graphs, First, Second);
 handle_event(_Event, State) ->
   {ok, State}.
 

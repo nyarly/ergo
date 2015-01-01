@@ -9,6 +9,8 @@
 
 -record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts, waiters}).
 
+-type taskspec() :: ergo:taskspec().
+
 -define(VIA(Workspace), {via, ergo_workspace_registry, {Workspace, events, only}}).
 -define(ID(Workspace, Id), {?MODULE, {Workspace, Id}}).
 -define(RUN_LIMIT,20).
@@ -17,9 +19,10 @@
 %%% Module API
 %%%===================================================================
 
+-spec start(ergo:workspace_name(), integer(), [ergo:target()]) -> ok.
 start(WorkspaceName, BuildId, Targets) ->
   Events = ?VIA(WorkspaceName),
-  gen_event:add_hander(Events, ?ID(WorkspaceName, BuildId), {WorkspaceName, BuildId, Targets}),
+  gen_event:add_handler(Events, ?ID(WorkspaceName, BuildId), {WorkspaceName, BuildId, Targets}),
   gen_event:notify(Events, {build_start, WorkspaceName, BuildId}).
 
 link_to(Workspace, Id, Pid) ->
@@ -30,7 +33,7 @@ link_to(Workspace, Id, Pid) ->
 %%% gen_event callbacks
 %%%===================================================================
 init({WorkspaceName, BuildId, Targets}) ->
-  BuildSpec=ergo_graphs:build_spec(Targets),
+  BuildSpec=ergo_graphs:build_list(WorkspaceName, Targets),
   {ok, #state{
       requested_targets=Targets,
       complete_tasks=[],
@@ -48,7 +51,7 @@ handle_event({build_start, WorkspaceName, BuildId},
 handle_event({task_completed, Task}, State) ->
   {ok, task_completed(Task, State)};
 handle_event({build_completed, BuildId}, State=#state{build_id=BuildId}) ->
-  build_completed(State),
+  [true] = build_completed(State),
   remove_handler;
 handle_event(_Event, State) ->
   {ok, State}.
@@ -77,18 +80,21 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec(task_executable([file:name_all()], binary()) -> file:name_all()).
 task_executable(TaskPath, Taskname) ->
-  file:path_open(TaskPath, Taskname).
+  {ok, Io, FullExe} = file:path_open([TaskPath], Taskname, [read]),
+  ok = file:close(Io),
+  FullExe.
 
 task_completed(Task, State = #state{build_spec=BuildSpec, workspace_dir=WorkspaceDir, complete_tasks=PrevCompleteTasks}) ->
   RunCounts = State#state.run_counts,
   CompleteTasks = [Task | PrevCompleteTasks],
-  ergo_freshness:store(Task, WorkspaceDir, task_deps(Task), task_products(Task)),
+  ok = ergo_freshness:store(Task, WorkspaceDir, task_deps(WorkspaceDir, Task), task_products(WorkspaceDir, Task)),
   start_tasks(WorkspaceDir, BuildSpec, CompleteTasks, RunCounts),
   State#state{
     complete_tasks=CompleteTasks,
     run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
   }.
 
+-spec(start_tasks(ergo:workspace_name(), ergo:build_spec(), [ergo:taskname()], dict:dict()) -> ok | {err, term()}).
 start_tasks(WorkspaceDir, BuildSpec, CompleteTasks, RunCounts) ->
   lists:foreach(
     fun(Task) -> start_task(WorkspaceDir, Task, run_count(Task, RunCounts)) end,
@@ -100,29 +106,30 @@ run_count(Task, RunCounts) ->
     error -> 0
   end.
 
-start_task(_WorkdspaceRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
+-spec(start_task(ergo:workspace_name(), ergo:taskname(), integer()) -> ok | {err, term()}).
+start_task(_WorkspaceRoot, Task, RunCount) when RunCount >= ?RUN_LIMIT ->
   {err, {too_many_repetitions, Task, RunCount}};
 start_task(WorkspaceRoot, Task, RunCount) ->
   [ RelExe | Args ] = Task,
-  {ok, Io, FullExe} = task_executable([WorkspaceRoot], RelExe),
-  file:close(Io),
+  FullExe = task_executable(WorkspaceRoot, RelExe),
   start_task(WorkspaceRoot, {Task, FullExe, Args}, RunCount,
-             ergo_freshness:check(Task, WorkspaceRoot, [FullExe | ergo_graph:dependencies(Task)])).
+             ergo_freshness:check(Task, WorkspaceRoot, [FullExe | ergo_graphs:get_dependencies(WorkspaceRoot, {task, Task})])).
 
-start_task(_WorkspaceRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
-  ergo_events:task_skipped({task, Task}),
+-spec(start_task(ergo:workspace_name(), taskspec(), integer(), hit | miss) -> ok | {err, term()}).
+start_task(WorkspaceRoot, {Task, _Exe, _Args}, _RunCount, hit) ->
+  ergo_events:task_skipped(WorkspaceRoot, {task, Task}),
   ok;
-start_task(_WorkspaceRoot, TaskSpec, _RunCount, _Fresh) ->
-  ergo_workspace:start_task(TaskSpec).
+start_task(WorkspaceRoot, TaskSpec, _RunCount, _Fresh) ->
+  ergo_workspace:start_task(WorkspaceRoot, TaskSpec).
 
 build_completed(#state{waiters=Waiters,build_id=BuildId,requested_targets=Targets}) ->
   [exit(Waiter,{build_completed,BuildId,Targets}) || Waiter <- Waiters].
 
-task_deps(Task) ->
-  ergo_graphs:get_dependencies({task, Task}).
+task_deps(Workspace, Task) ->
+  ergo_graphs:get_dependencies(Workspace, {task, Task}).
 
-task_products(Task) ->
-  ergo_graphs:get_products({task, Task}).
+task_products(Workspace, Task) ->
+  ergo_graphs:get_products(Workspace, {task, Task}).
 
 eligible_tasks(BuildSpec, CompleteTasks) ->
   lists:subtract(
@@ -131,5 +138,7 @@ eligible_tasks(BuildSpec, CompleteTasks) ->
     CompleteTasks
   ).
 
+complete(_TaskList, []) ->
+  [];
 complete(TaskList, CompleteTasks) ->
   [ Task || Task <- TaskList, CompleteTask <- CompleteTasks, Task =:= CompleteTask ].

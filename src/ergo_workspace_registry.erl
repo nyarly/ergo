@@ -11,7 +11,7 @@
 -define(SERVER, ?MODULE).
 -record(state, {item_index::integer(), registry}).
 -record(registry_key, {workspace::atom(),role::roletype(),name::term()}).
--record(registration, {key::#registry_key{},pid::pid(),index::integer()}).
+-record(registration, {key::#registry_key{}|'_',pid::pid()|'_',index::binary()}).
 
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -78,12 +78,12 @@ reg_key_for(Workspace,Role,Name) ->
   #registry_key{workspace=Workspace,role=Role,name=Name}.
 
 index_for(Role,Index) ->
-  RoleB = erlang:atom_to_binary(Role),
+  RoleB = erlang:atom_to_binary(Role, unicode),
   IndexB = erlang:integer_to_binary(Index),
-  <<RoleB/binary,<<" ">>,IndexB/binary>>.
+  <<RoleB/binary," ",IndexB/binary>>.
 
 build_state() ->
-  #state{item_index=1, registry=ets:new(ergo_registration, set, {keypos, #registration.key})}.
+  #state{item_index=1, registry=ets:new(ergo_registration, [set, {keypos, #registration.key}])}.
 
 reg_name(RegKey=#registry_key{role=Role}, Pid, RegTab, Index) ->
   ets:insert(RegTab, #registration{key=RegKey, pid=Pid, index=index_for(Role,Index)}).

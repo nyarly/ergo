@@ -10,7 +10,7 @@
 
 -define(ERGO_DIR, ".ergo").
 -define(VIA(Workspace), {via, ergo_workspace_registry, {Workspace, server, only}}).
--record(state, {workspace_dir, task_limit}).
+-record(state, {workspace_dir, build_count, task_limit}).
 start_link(WorkspaceDir) ->
   gen_server:start_link(?VIA(WorkspaceDir), ?MODULE, [WorkspaceDir], []).
 
@@ -83,14 +83,16 @@ ergo_dir(Path) ->
   end.
 
 init([WorkspaceDir]) ->
-  {ok, #state{workspace_dir=WorkspaceDir, task_limit=5}}.
+  {ok, build_state(WorkspaceDir)}.
 
+build_state(WorkspaceDir) ->
+  #state{workspace_dir=WorkspaceDir,build_count=0,task_limit=5}.
 
-handle_call({start_build, {Targets}}, _From, State) ->
-  Reply = ergo_build:add_sup_to(events, {State#state.workspace_dir, Targets}),
-  {reply, Reply, State};
+handle_call({start_build, {Targets}}, _From, State=#state{workspace_dir=Workspace,build_count=BuildCount}) ->
+  Reply = ergo_build:start(Workspace, BuildCount, Targets),
+  {reply, Reply, State#state{build_count=BuildCount+1}};
 handle_call({start_task, RunSpec}, _From, State) ->
-  Reply = ergo_task_soop:start_task(State#state.task_limit, RunSpec, State#state.workspace_dir),
+  Reply = ergo_tasks_soop:start_task(State#state.task_limit, RunSpec, State#state.workspace_dir),
   {reply, Reply, State};
 handle_call(_Request, _From, State) ->
   Reply = ok,

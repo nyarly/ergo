@@ -4,3 +4,4 @@ ebin/
 *.plt
 .eunit/
 deps/
+last_dialyze
