@@ -2,7 +2,7 @@
 -behaviour(supervisor).
 
 -export([start_link/0]).
--export([init/1, start_workspace/1, find_workspace/1]).
+-export([init/1, start_workspace/1]).
 
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, []).
@@ -27,20 +27,12 @@ init([]) ->
 start_workspace(Name) ->
   case supervisor:start_child(?MODULE,
                          {{proj_sup, Name},
-                          {ergo_workspace_sup, start_link, Name},
+                          {ergo_workspace, Name},
                           permanent, 5, supervisor, [ergo_workspace_sup]}) of
-    {ok, Pid} -> Pid;
-    {error, {already_started, Pid}} -> Pid;
+    {ok, Pid} -> {ok, Pid};
+    {error, {already_started, Pid}} -> {ok, Pid};
     Error = {error, _} -> Error;
     Any -> {error, Any}
-  end.
-
-
-find_workspace(Name) ->
-  case [Child || {Id, Child, _Type, _Modules} <- supervisor:which_children(?MODULE),
-                 {proj_sup, Name} =:= Id] of
-    [] -> unknown;
-    List -> hd(List)
   end.
 
 % Major components:

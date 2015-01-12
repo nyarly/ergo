@@ -5,7 +5,7 @@
 -export([start/3]).
 
 %% gen_event callbacks
--export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2, code_change/3, link_to/3]).
+-export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2, code_change/3, link_to/3, check_alive/2]).
 
 -record(state, {requested_targets, build_spec, build_id, workspace_dir, complete_tasks, run_counts, waiters}).
 
@@ -28,6 +28,11 @@ start(WorkspaceName, BuildId, Targets) ->
 link_to(Workspace, Id, Pid) ->
   gen_event:call(?VIA(Workspace), ?ID(Workspace, Id), {exit_when_done, Pid}).
 
+check_alive(Workspace, Id) ->
+  case gen_event:call(?VIA(Workspace), ?ID(Workspace, Id), {check_alive}) of
+    alive -> alive;
+    _ -> dead
+  end.
 
 %%%===================================================================
 %%% gen_event callbacks
@@ -58,12 +63,15 @@ handle_event(_Event, State) ->
 
 handle_call({exit_when_done, Pid}, State=#state{waiters=Waiters}) ->
   {ok, ok, State#state{waiters=[Pid|Waiters]}};
+handle_call({check_alive}, State) ->
+  {ok, alive, State};
 handle_call(_Request, State) ->
   Reply = ok,
   {ok, Reply, State}.
 
 handle_info(_Info, State) ->
   {ok, State}.
+
 
 terminate(_Reason, _State) ->
   ok.

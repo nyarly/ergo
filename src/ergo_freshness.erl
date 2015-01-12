@@ -18,7 +18,11 @@ start() ->
   ok.
 
 file_digest(Root, Path) ->
-  digest_file(Root, Path).
+  {ok, Io, _FullName} = file:path_open([Root], Path, [read, raw, binary]),
+  HashContext = crypto:hash_init(sha),
+  Digest = hash_file(Io, HashContext),
+  #digest{filename=Path, digest=Digest}.
+
 
 -spec(store(ergo:taskname(), ergo:workspace_name(), [file:name_all()], [file:name_all()]) -> ok).
 store(Task, Root, Deps, Prods) ->
@@ -78,12 +82,6 @@ create_tables() ->
   ok = ergo_storage:create_table(ergo_cached_digest, set, record_info(fields, ergo_cached_digest)),
   ok = ergo_storage:create_table(ergo_task_elidibility, set, record_info(fields, ergo_task_elidibility)),
   [ergo_task_cache, ergo_cached_digest, ergo_task_elidibility].
-
-digest_file(Root, Path) ->
-  {ok, Io, _FullName} = file:path_open([Root], Path, [read, raw, binary]),
-  HashContext = crypto:hash_init(sha),
-  Digest = hash_file(Io, HashContext),
-  #digest{filename=Path, digest=Digest}.
 
 hash_file(Io, Context) ->
   case file:read(Io, ?CHUNK_SIZE) of

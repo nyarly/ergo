@@ -43,7 +43,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_get_workspace(Workspace) ->
-  case ergo_sup:find_workspace(Workspace) of
-    unknown -> ergo_sup:start_workspace(Workspace);
-    Pid -> Pid
+  case ergo_sup:start_workspace(Workspace) of
+    {ok, Pid} -> Pid;
+    Error -> Error
   end.

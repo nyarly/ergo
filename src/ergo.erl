@@ -105,6 +105,7 @@ watch(Workspace) ->
 
 -spec(run_build(workspace_name(), [target()]) -> command_response()).
 run_build(Workspace, Targets) ->
+  ergo_sup:start_workspace(Workspace),
   ergo_workspace:start_build(Workspace, Targets).
 
 -spec(add_product(workspace_name(), taskname(), taskname(), productname()) -> command_response()).
@@ -125,7 +126,7 @@ add_task_seq(Workspace, Reporter, First, Second) ->
 
 -spec(wait_on_build(workspace_name(), build_id()) -> command_response()).
 wait_on_build(Workspace, Id) ->
-  ergo_build:link_to(Workspace, Id, self()).
+  ergo_build_waiter:wait_on(Workspace, Id).
 
 -spec(dont_elide(workspace_name(), taskname()) -> command_response()).
 dont_elide(Workspace, Task) ->

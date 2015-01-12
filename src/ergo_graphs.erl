@@ -14,7 +14,7 @@
 
 -define(VIA(WorkspaceName), {via, ergo_workspace_registry, {WorkspaceName, graph, only}}).
 start_link(Workspace) ->
-  gen_server:start_link({via, ergo_workspace_registry, {Workspace, graph, only}}, ?MODULE, [], []).
+  gen_server:start_link({via, ergo_workspace_registry, {Workspace, graph, only}}, ?MODULE, [Workspace], []).
 
 -type taskname() :: ergo:taskname().
 -type productname() :: ergo:productname().
@@ -100,8 +100,8 @@ task_batch(Workspace, Task,Graph) ->
                  vertices :: ets:tid(),
                  provenence :: ets:tid()}).
 
-init([]) ->
-  {ok, build_state() }.
+init([Workspace]) ->
+  {ok, build_state(Workspace) }.
 
 handle_call({new_dep, FromProduct, ToProduct}, _From, State) ->
   {reply, new_dep(State, FromProduct, ToProduct), State};
@@ -139,9 +139,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 
 
-build_state() ->
-  build_state(<<"/">>).
-
 build_state(WorkspaceRoot) ->
   build_state(WorkspaceRoot, protected).
 
@@ -158,6 +155,38 @@ cleanup_state(State) ->
   ets:delete(State#state.vertices),
   ets:delete(State#state.provenence),
   ok.
+
+-spec dump_to(#state{}, file:name()) -> #state{}.
+dump_to(State=#state{vertices=VTab, edges=ETab, provenence=PTab}, FilenameBase) ->
+  ets:tab2file(VTab, [FilenameBase, ".vtab"]),
+  ets:tab2file(ETab, [FilenameBase, ".etab"]),
+  ets:tab2file(PTab, [FilenameBase, ".ptab"]),
+  State.
+
+load_from(State, FilenameBase) ->
+  load_from(State, FilenameBase, protected).
+
+-spec load_from(#state{}, file:name(), public | protected) -> #state{}.
+load_from(State, FilenameBase, Access) ->
+  VTab = load_or_build([FilenameBase, ".vtab"], vertices, set, Access),
+  ETab = load_or_build([FilenameBase, ".etab"], edges, bag, Access),
+  PTab = load_or_build([FilenameBase, ".ptab"], provenence, bag, Access),
+  maybe_delete_table(State#state.edges),
+  maybe_delete_table(State#state.vertices),
+  maybe_delete_table(State#state.provenence),
+  State#state{edges = ETab, vertices = VTab, provenence = PTab}.
+
+load_or_build(Filename, TableName, Type, Access) ->
+  case ets:file2tab(Filename) of
+    {ok, Tab} -> Tab;
+    {error, _} -> ets:new(TableName, [Type, Access, {keypos, 2}])
+  end.
+
+
+maybe_delete_table(undefined) ->
+  ok;
+maybe_delete_table(Table) ->
+  ets:delete(Table).
 
 -spec(process_task_batch(ergo:taskname(), [ergo:graph_item()], #state{}) -> ok).
 process_task_batch(Taskname, ReceivedItems, State=#state{workspace=Workspace}) ->
@@ -258,28 +287,6 @@ normalize_batch_statement(_State, Stmt={seq, _, _}) ->
 normalize_batch_statement(_State, Statement) ->
   {err, {unrecognized_statement, Statement}}.
 
-
--spec(dump_to(#state{}, file:name()) -> ok).
-dump_to(#state{vertices=VTab, edges=ETab, provenence=PTab}, FilenameBase) ->
-  ets:tab2file(VTab, [FilenameBase, ".vtab"]),
-  ets:tab2file(ETab, [FilenameBase, ".etab"]),
-  ets:tab2file(PTab, [FilenameBase, ".ptab"]),
-  ok.
-
--spec(load_from(#state{}, file:name()) -> #state{}).
-load_from(State, FilenameBase) ->
-  {ok, VTab} = ets:file2tab([FilenameBase, ".vtab"]),
-  {ok, ETab} = ets:file2tab([FilenameBase, ".etab"]),
-  {ok, PTab} = ets:file2tab([FilenameBase, ".ptab"]),
-  maybe_delete_table(State#state.edges),
-  maybe_delete_table(State#state.vertices),
-  maybe_delete_table(State#state.provenence),
-  State#state{edges = ETab, vertices = VTab, provenence = PTab}.
-
-maybe_delete_table(undefined) ->
-  ok;
-maybe_delete_table(Table) ->
-  ets:delete(Table).
 
 % Insert a dependency
 -spec new_dep(#state{}, #product{}, #product{}) ->

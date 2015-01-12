@@ -5,3 +5,5 @@ ebin/
 .eunit/
 deps/
 last_dialyze
+.vim-role
+*.beam
