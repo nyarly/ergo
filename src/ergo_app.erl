@@ -5,7 +5,8 @@
 -export([stop/1]).
 
 start(_Type, _Args) ->
-	ergo_sup:start_link().
+  ergo_storage:start(),
+  ergo_sup:start_link().
 
 stop(_State) ->
 	ok.

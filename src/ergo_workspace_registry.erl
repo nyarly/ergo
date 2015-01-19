@@ -5,7 +5,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, link_to/1, name_from_id/1, id_from_name/1]).
 
--export([register_name/2, unregister_name/1, whereis_name/1, send/2]).
+-export([register_name/2, unregister_name/1, whereis_name/1, send/2, normalize_name/1]).
 
 -type(roletype() :: supervisor | build | server | graph | events).
 -define(SERVER, ?MODULE).
@@ -36,6 +36,9 @@ id_from_name({Workspace,Role,Name}) ->
 
 link_to(ViaTuple) ->
   link(whereis_name(ViaTuple)).
+
+normalize_name(Workspace) ->
+  filename:absname(Workspace).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -75,7 +78,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 reg_key_for(Workspace,Role,Name) ->
-  #registry_key{workspace=Workspace,role=Role,name=Name}.
+  #registry_key{workspace=normalize_name(Workspace),role=Role,name=Name}.
 
 index_for(Role,Index) ->
   RoleB = erlang:atom_to_binary(Role, unicode),
@@ -86,15 +89,22 @@ build_state() ->
   #state{item_index=1, registry=ets:new(ergo_registration, [set, {keypos, #registration.key}])}.
 
 reg_name(RegKey=#registry_key{role=Role}, Pid, RegTab, Index) ->
-  ets:insert(RegTab, #registration{key=RegKey, pid=Pid, index=index_for(Role,Index)}).
+  ct:pal("Reg: ~p~n", [RegKey]),
+  register_response(ets:insert(RegTab, #registration{key=RegKey, pid=Pid, index=index_for(Role,Index)})).
+
+register_response(true) -> yes;
+register_response(_) -> no.
 
 unreg_name(RegKey, RegTab) ->
+  ct:pal("Unreg: ~p~n", [RegKey]),
   ets:delete(RegTab, RegKey).
 
 lookup(RegKey, RegTab) ->
-  case hd(ets:lookup(RegTab, RegKey)) of
-    #registration{pid=Pid} -> Pid;
-    _ -> unknown
+  ct:pal("Lookup: ~p -> ~p~n",[RegKey, ets:lookup(RegTab, RegKey)]),
+  case ets:lookup(RegTab, RegKey) of
+    [#registration{pid=Pid}] -> Pid;
+    [#registration{pid=Pid}|_Rest] -> Pid;
+    [] -> undefined
   end.
 
 process_id(RegKey, RegTab) ->

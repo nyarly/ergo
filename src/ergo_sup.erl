@@ -18,8 +18,7 @@ init([]) ->
   Procs = [
            supervised(server, ergo_server),
            supervised(registry, ergo_workspace_registry),
-           supervised(tasks, ergo_tasks_soop, supervisor),
-           supervised(freshness, ergo_freshness)
+           supervised(tasks, ergo_tasks_soop, supervisor)
           ],
   {ok, {{one_for_one, 1, 5}, Procs}}.
 
@@ -27,23 +26,16 @@ init([]) ->
 start_workspace(Name) ->
   case supervisor:start_child(?MODULE,
                          {{proj_sup, Name},
-                          {ergo_workspace, Name},
+                          {ergo_workspace_sup, start_link, [Name]},
                           permanent, 5, supervisor, [ergo_workspace_sup]}) of
-    {ok, Pid} -> {ok, Pid};
-    {error, {already_started, Pid}} -> {ok, Pid};
-    Error = {error, _} -> Error;
+    {ok, Pid} ->
+      ct:pal("ok ~p~n", [Pid]),
+      {ok, Pid};
+    {error, {already_started, Pid}} ->
+      ct:pal("already ~p~n", [Pid]),
+      {ok, Pid};
+    Error = {error, _} ->
+      ct:pal("err: ~p~n", [Error]),
+      Error;
     Any -> {error, Any}
   end.
-
-% Major components:
-%   ergo_commands: the API module for external commands
-%   ergo_server: the overall management process
-%   ergo_graphs: serves and persists graphs
-%   ergo_seq_graph: the sequence graph server
-%   ergo_also_graph: the co-task graph server
-%   ergo_dep_graph: the dependency graph server
-%   ergo_freshness: determines the freshness of external products
-%   ergo_build_soop: supervisor of builds
-%   ergo_task_soop: supervisor of tasks
-%   ergo_build_master: the leader of of a build
-%   ergo_build_task: runs a build-task port

@@ -5,7 +5,8 @@
 
 -define(PRODUCT, "x.out").
 -define(DEP, "x.in").
--define(TASK, [<<"compile">>,  <<"x">>]).
+-define(TASKFILE, <<"compile">>).
+-define(TASK, [?TASKFILE,  <<"x">>]).
 
 suite() ->
   [{timetrap,{seconds,30}}].
@@ -16,10 +17,10 @@ init_per_suite(Config) ->
     fun(Filename) ->
         {ok, _Count} = file:copy(filename:join([Data, Filename]), filename:join([Priv, Filename]))
     end,
-    [?PRODUCT, ?DEP]
+    [?PRODUCT, ?DEP, ?TASKFILE]
   ),
   application:set_env(mnesia, dir, Priv),
-  ergo_freshness:start(),
+  ergo_storage:start(),
   %application:start(ergo),
   Config.
 
@@ -34,6 +35,7 @@ end_per_group(_GroupName, _Config) ->
 init_per_testcase(_TestCase, Config) ->
   Priv = ?config(priv_dir, Config),
   ergo_freshness:store(?TASK, Priv, [?DEP], [?PRODUCT]),
+  ergo_freshness:elidability(Priv, ?TASK, true),
   Config.
 end_per_testcase(_TestCase, _Config) ->
   ok.

@@ -105,7 +105,9 @@ watch(Workspace) ->
 
 -spec(run_build(workspace_name(), [target()]) -> command_response()).
 run_build(Workspace, Targets) ->
-  ergo_sup:start_workspace(Workspace),
+  ct:pal("RB1~n"),
+  {ok, _Pid} = ergo_sup:start_workspace(Workspace),
+  ct:pal("RB2~n"),
   ergo_workspace:start_build(Workspace, Targets).
 
 -spec(add_product(workspace_name(), taskname(), taskname(), productname()) -> command_response()).

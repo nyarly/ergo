@@ -10,5 +10,6 @@
                 mnesia
 	]},
 	{mod, {ergo_app, []}},
-	{env, []}
+	{env, [
+              ]}
 ]}.

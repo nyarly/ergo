@@ -23,10 +23,16 @@ init_per_group(_GroupName, Config) ->
   Config.
 end_per_group(_GroupName, _Config) ->
   ok.
-init_per_testcase(_TestCase, Config) ->
-  copy_test_project(Config, "test1", "project", "config", "result"),
+init_per_testcase(TestCase, Config) ->
+  application:start(crypto),
+  application:start(mnesia),
+  copy_test_project(Config, TestCase),
+  application:start(ergo),
   Config.
 end_per_testcase(_TestCase, _Config) ->
+  application:stop(ergo),
+  application:stop(mnesia),
+  application:stop(crypto),
   ok.
 groups() ->
   [].
@@ -38,9 +44,13 @@ all() ->
 %%
 %%
 
+copy_test_project(Config, TestSub) ->
+  copy_test_project(Config, TestSub, "project", "config", "result").
+
 copy_test_project(Config, TestSub, Proj, Conf, Res) ->
   DataDir = proplists:get_value(data_dir, Config),
   PrivDir = proplists:get_value(priv_dir, Config),
+  application:set_env(ergo, mnesia_dir, filename:flatten([PrivDir, Conf, "/storage"]), [{persistent, true}]),
   [copy_dir([DataDir, TestSub, '/', SubDir], [PrivDir, SubDir]) || SubDir <- [Proj, Conf, Res]].
 
 
