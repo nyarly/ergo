@@ -9,8 +9,8 @@
 
 -module(ergo_events).
 
--export([build_requested/2, requirement_noted/3, production_noted/3,
-         graph_changed/1, task_started/2, task_failed/2, task_completed/2,
+-export([build_requested/2, build_completed/3, requirement_noted/3, production_noted/3,
+         graph_changed/1, task_init/2, task_started/2, task_failed/3, task_completed/2,
          task_skipped/2, tasks_joint/3, tasks_ordered/3]).
 
 %% @spec:	build_requested(targets::target_list()) -> ok.
@@ -19,6 +19,11 @@
 -spec(build_requested(ergo:workspace_name(), [ergo:target()]) -> ok).
 build_requested(Workspace, Targets) ->
   send_event(Workspace, {build_requested, Targets}).
+
+
+-spec(build_completed(ergo:workspace_name(), integer(), boolean()) -> ok).
+build_completed(Workspace, BuildId, Succeeded) ->
+  send_event(Workspace, {build_completed, BuildId, Succeeded}).
 
 %% @spec:	requirement_noted(product::ergo:produced(), dependency::ergo:produced()) -> ok.
 %% @end
@@ -41,15 +46,21 @@ graph_changed(Workspace) ->
 
 %% @spec:	task_started(task::ergo:task()) -> ok.
 %% @end
+-spec(task_init(ergo:workspace_name(), ergo:task()) -> ok).
+task_init(Workspace, Task) ->
+  send_event(Workspace, {task_init, Task}).
+
+%% @spec:	task_started(task::ergo:task()) -> ok.
+%% @end
 -spec(task_started(ergo:workspace_name(), ergo:task()) -> ok).
 task_started(Workspace, Task) ->
   send_event(Workspace, {task_started, Task}).
 
 %% @spec:	task_failed(Task::ergo:task()) -> ok.
 %% @end
--spec(task_failed(ergo:workspace_name(), ergo:task()) -> ok).
-task_failed(Workspace, Task) ->
-  send_event(Workspace, {task_failed, Task}).
+-spec(task_failed(ergo:workspace_name(), ergo:task(), term()) -> ok).
+task_failed(Workspace, Task, Reason) ->
+  send_event(Workspace, {task_failed, Task, Reason}).
 
 %% @spec:	task_skipped(task::ergo:task()) -> ok.
 %% @end

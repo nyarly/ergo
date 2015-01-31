@@ -19,6 +19,7 @@ file_digest(Root, Path) ->
 
 -spec(store(ergo:taskname(), ergo:workspace_name(), [file:name_all()], [file:name_all()]) -> ok).
 store(Task, Root, Deps, Prods) ->
+  ct:pal("fresh:store(~p,~p,~p,~p)", [Task, Root, Deps, Prods]),
   [Taskfile | _TaskArgs] = Task,
   {atomic, _} = mnesia:transaction(fun() ->
         mnesia:write(#ergo_task_cache{

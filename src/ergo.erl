@@ -50,6 +50,10 @@ run_build(Targets) ->
 add_product(Task, Product) ->
   add_product(ergo_workspace:current(), ergo_task:current(), Task, Product).
 
+-spec(add_required(taskname(), productname()) -> command_response()).
+add_required(Task, Product) ->
+  add_required(ergo_workspace:current(), ergo_task:current(), Task, Product).
+
 -spec(add_file_dep(productname(), productname()) -> command_response()).
 add_file_dep(From, To) ->
   add_file_dep(ergo_workspace:current(), ergo_task:current(), From, To).
@@ -105,14 +109,17 @@ watch(Workspace) ->
 
 -spec(run_build(workspace_name(), [target()]) -> command_response()).
 run_build(Workspace, Targets) ->
-  ct:pal("RB1~n"),
   {ok, _Pid} = ergo_sup:start_workspace(Workspace),
-  ct:pal("RB2~n"),
+  watch(Workspace),
   ergo_workspace:start_build(Workspace, Targets).
 
 -spec(add_product(workspace_name(), taskname(), taskname(), productname()) -> command_response()).
 add_product(Workspace, Reporter, Task, Product) ->
   ergo_task:add_prod(Workspace, Reporter, Task, Product).
+
+-spec(add_required(workspace_name(), taskname(), taskname(), productname()) -> command_response()).
+add_required(Workspace, Reporter, Task, Product) ->
+  ergo_task:add_req(Workspace, Reporter, Task, Product).
 
 -spec(add_file_dep(workspace_name(), taskname(), productname(), productname()) -> command_response()).
 add_file_dep(Workspace, Reporter, From, To) ->

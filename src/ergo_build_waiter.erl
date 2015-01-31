@@ -27,8 +27,10 @@ wait_on(Workspace, BuildId) ->
   ok.
 
 block_until_dead(alive) ->
+  ct:pal("Build is alive..."),
   receive
-    build_complete -> ok
+    build_complete -> ok;
+    OtherThing -> ct:pal("Don't recognize: ~p~n", [OtherThing])
   end;
 block_until_dead(_) ->
   ok.
@@ -44,10 +46,11 @@ add_listener(Workspace, BuildId) ->
 init([Pid,BuildId]) ->
   {ok, #state{pid=Pid,build=BuildId}}.
 
-handle_event({build_completed, BuildId}, #state{pid=Pid,build=BuildId}) ->
+handle_event({build_completed, BuildId, _Success}, #state{pid=Pid,build=BuildId}) ->
   Pid ! build_complete,
   remove_handler;
-handle_event(_Event, State) ->
+handle_event(Event, State) ->
+   ct:pal("Waiting - saw ~p~n", [Event]),
   {ok, State}.
 
 handle_call(_Request, State) ->

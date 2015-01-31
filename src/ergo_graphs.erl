@@ -31,6 +31,8 @@ start_link(Workspace) ->
           edge_id :: edge_id(), task :: taskname(), also :: taskname() }).
 -record(production, {
           edge_id :: edge_id(), task :: taskname(), produces :: normalized_product() }).
+-record(requirement, {
+          edge_id :: edge_id(), task :: taskname(), requires :: normalized_product() }).
 -record(dep, {
           edge_id :: edge_id(), from :: normalized_product(), to :: normalized_product() }).
 -type edge_record() :: #seq{} | #cotask{} | #production{} | #dep{}.
@@ -190,10 +192,11 @@ maybe_delete_table(Table) ->
 
 -spec(process_task_batch(ergo:taskname(), [ergo:graph_item()], #state{}) -> ok).
 process_task_batch(Taskname, ReceivedItems, State=#state{workspace=Workspace}) ->
-  case record_task_batch(Taskname, ReceivedItems, State) of
-    true -> ergo_events:graph_changed(Workspace);
-    false -> ok
-  end,
+  maybe_notify_changed( record_task_batch(Taskname, ReceivedItems, State), Workspace).
+
+maybe_notify_changed(true, Workspace) ->
+  ergo_events:graph_changed(Workspace);
+maybe_notify_changed(false, _Workspace) ->
   ok.
 
 -spec(record_task_batch(ergo:taskname(), [ergo:graph_item()], #state{}) -> true | false).
@@ -254,6 +257,8 @@ edge_for_statement({co, Task, Also}) ->
   #cotask{task=Task,also=Also};
 edge_for_statement({prod, Task,Produces}) ->
   #production{task=Task,produces=Produces};
+edge_for_statement({req, Task,Produces}) ->
+  #requirement{task=Task,requires=Produces};
 edge_for_statement({dep, From, To}) ->
   #dep{from=From,to=To};
 edge_for_statement(Statement) ->
@@ -427,6 +432,23 @@ handle_build_list(State, Targets) ->
             [taskname_from_vertex(SeqGraph, PredTask) || PredTask <- digraph_utils:reaching_neighbours([TV], SeqGraph)]
            } || TV <- SeqVs ],
   digraph:delete(AlsoGraph), digraph:delete(SeqGraph),
+  add_unknown_tasks(TargetTasks, Specs).
+
+add_unknown_tasks([], Specs) ->
+  Specs;
+add_unknown_tasks([Task | Rest], Specs) ->
+  add_unknown_tasks(
+    Rest,
+    maybe_add_task(
+      Task,
+      Specs,
+      [ Spec || Spec={KnownTask, _List} <- Specs, KnownTask =:= Task ]
+     )
+   ).
+
+maybe_add_task(Task, Specs, []) ->
+  [ {Task,[]} | Specs ];
+maybe_add_task(_Task, Specs, _Matched) ->
   Specs.
 
 extra_endorser_tasks(Edges, KnownTasks, State = #state{provenence=Prov}) ->
@@ -633,67 +655,82 @@ digraph_test_() ->
     fun() -> build_state("/", public) end, %setup
     fun(State) -> cleanup_state(State) end, %teardown
     [
-      fun(State) ->
-          ?_test(begin
-                ?assertMatch(ok, new_dep(State, {product, ProductName}, {product, DependsOn})),
-                ?assertMatch(exists, new_dep(State, {product, ProductName}, {product, DependsOn})),
-                ?assertEqual(1, length(ets:tab2list(State#state.edges)))
-            end)
-      end,
-      fun(State) ->
-          ?_test(begin
-                ?assertMatch(ok, new_prod(State, {task, TaskName}, {product, ProductName})),
-                ?assertMatch(exists, new_prod(State, {task, TaskName}, {product, ProductName})),
-                ?assertEqual(1, length(ets:tab2list(State#state.edges)))
-            end)
-      end,
-      fun(State) ->
-          ?_test(begin
-                ?assertMatch(ok, co_task(State, {task, TaskName}, {task, OtherTaskName})),
-                ?assertMatch(exists, co_task(State, {task, TaskName}, {task, OtherTaskName})),
-                ?assertEqual(1, length(ets:tab2list(State#state.edges)))
-            end)
-      end,
-      fun(State) ->
-          ?_test(begin
-                ?assertMatch(ok, task_seq(State, {task, TaskName}, {task, OtherTaskName})),
-                ?assertMatch(exists, task_seq(State, {task, TaskName}, {task, OtherTaskName})),
-                ?assertEqual(1, length(ets:tab2list(State#state.edges)))
-            end)
-      end,
-      fun(State) ->
-          ?_test( begin
-                new_dep(State, {product, ProductName}, {product, DependsOn}),
-                ?assertMatch(ok,new_prod(State, {task, TaskName}, {product, ProductName})),
-                ?assertEqual(
-                  [DependsOn],
-                  task_deps(State, TaskName)
-                )
-            end)
-      end,
-      fun(State) ->
-          ?_test( begin
-                new_dep(State, {product, ProductName}, {product, DependsOn}),
-                ?assertMatch(ok,new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
-                ?assertMatch(ok,new_prod(State, {task, TaskName}, {product, ProductName})),
-                ?assertEqual(
-                  [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
-                  handle_build_list(State, [{product, ProductName}])
-                )
-            end)
-      end,
-      fun(State) ->
-          ?_test( begin
-                new_dep(State, {product, ProductName}, {product, DependsOn}),
-                ?assertMatch(ok,new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
-                ?assertMatch(ok,new_prod(State, {task, TaskName}, {product, ProductName})),
-                ?assertMatch(ok, dump_to(State, DumpFilename)),
-                NewState = load_from(#state{}, DumpFilename),
-                ?assertEqual(
-                  [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
-                  handle_build_list(NewState, [{product, ProductName}])
-                )
-            end)
-      end
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch([{[<<"new-task">>, <<"with-arg">>], []}],
+                               handle_build_list(State, [{task, [<<"new-task">>, <<"with-arg">>]}]))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch({ok,{dep,1,"x.out","x.in"}},
+                               new_dep(State, {product, ProductName}, {product, DependsOn})),
+                  ?assertMatch({exists,{dep,1,"x.out","x.in"}},
+                               new_dep(State, {product, ProductName}, {product, DependsOn})),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges)))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch({ok,{production,1,[<<"compile">>,<<"x">>],"x.out"}},
+                               new_prod(State, {task, TaskName}, {product, ProductName})),
+                  ?assertMatch({exists,{production,1,[<<"compile">>,<<"x">>],"x.out"}},
+                               new_prod(State, {task, TaskName}, {product, ProductName})),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges)))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch({ok, {cotask,1,[<<"compile">>,<<"x">>],[<<"test">>,<<"x">>]}},
+                               co_task(State, {task, TaskName}, {task, OtherTaskName})),
+                  ?assertMatch({exists, {cotask,1,[<<"compile">>,<<"x">>],[<<"test">>,<<"x">>]}},
+                               co_task(State, {task, TaskName}, {task, OtherTaskName})),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges)))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch({ok,{seq,1, [<<"compile">>,<<"x">>], [<<"test">>,<<"x">>]}},
+                               task_seq(State, {task, TaskName}, {task, OtherTaskName})),
+                  ?assertMatch({exists,{seq,1, [<<"compile">>,<<"x">>], [<<"test">>,<<"x">>]}},
+                               task_seq(State, {task, TaskName}, {task, OtherTaskName})),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges)))
+                end)
+     end,
+     fun(State) ->
+         ?_test( begin
+                   new_dep(State, {product, ProductName}, {product, DependsOn}),
+                   ?assertMatch({ok,{production,2,[<<"compile">>,<<"x">>],"x.out"}},
+                                new_prod(State, {task, TaskName}, {product, ProductName})),
+                   ?assertEqual(
+                      [DependsOn],
+                      task_deps(State, TaskName)
+                     )
+                 end)
+     end,
+     fun(State) ->
+         ?_test( begin
+                   new_dep(State, {product, ProductName}, {product, DependsOn}),
+                   ?assertMatch({ok,#production{}},new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
+                   ?assertMatch({ok,#production{}},new_prod(State, {task, TaskName}, {product, ProductName})),
+                   ?assertEqual(
+                      [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
+                      handle_build_list(State, [{product, ProductName}])
+                     )
+                 end)
+     end,
+     fun(State) ->
+         ?_test( begin
+                   new_dep(State, {product, ProductName}, {product, DependsOn}),
+                   ?assertMatch({ok, #production{}}, new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
+                   ?assertMatch({ok, #production{}}, new_prod(State, {task, TaskName}, {product, ProductName})),
+                   ?assertMatch(#state{}, dump_to(State, DumpFilename)),
+                   NewState = load_from(#state{}, DumpFilename),
+                   ?assertEqual(
+                      [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
+                      handle_build_list(NewState, [{product, ProductName}])
+                     )
+                 end)
+     end
     ]
   }.

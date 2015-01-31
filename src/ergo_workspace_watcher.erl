@@ -8,13 +8,13 @@
 -export([init/1, handle_event/2, handle_call/2,
   handle_info/2, terminate/2, code_change/3]).
 
--record(state, {}).
+-record(state, {tag}).
 
 %%%===================================================================
 %%% Module API
 %%%===================================================================
 add_to_sup(Workspace) ->
-  add_to_sup(Workspace, []).
+  add_to_sup(Workspace, [none]).
 
 add_to_sup(Workspace, Args) ->
   Handler = {?MODULE, make_ref()},
@@ -25,11 +25,11 @@ add_to_sup(Workspace, Args) ->
 %%%===================================================================
 %%% gen_event callbacks
 %%%===================================================================
-init([]) ->
-  {ok, #state{}}.
+init([Tag]) ->
+  {ok, #state{tag=Tag}}.
 
-handle_event(Event, State) ->
-  io:format("~p", Event),
+handle_event(Event, State=#state{tag=Tag}) ->
+  format_event(Tag, Event),
   {ok, State}.
 
 handle_call(_Request, State) ->
@@ -44,6 +44,11 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
+
+format_event(none, Event) ->
+  io:format("Workspace Event: ~p~n", [Event]);
+format_event(Tag, Event) ->
+  io:format("[~p] Workspace Event: ~p~n", [Tag, Event]).
 
 %format_status(normal, [PDict, State]) ->
 %	Status;

@@ -9,16 +9,20 @@
 start_link(WorkspaceName) ->
   supervisor:start_link({via, ergo_workspace_registry, {WorkspaceName, supervisor, only}}, ?MODULE, WorkspaceName).
 
+supervised(Workspace, Module) ->
+  supervised(Workspace, Module, Module).
+
 supervised(Workspace, Name, Module) ->
   supervised(Workspace, Name, Module, worker).
 
 supervised(Workspace, Name, Module, Type) ->
   { Name, { Module, start_link, [Workspace] }, permanent, 5, Type, [Module]}.
 
-init(WorkspaceName) ->
+init(Workspace) ->
+  WorkspaceName = ergo_workspace_registry:normalize_name(Workspace),
   Procs = [
-           supervised(WorkspaceName, builds, ergo_builds_soop, supervisor),
-           supervised(WorkspaceName, graphs, ergo_graphs),
+           supervised(WorkspaceName, ergo_workspace),
+           supervised(WorkspaceName, ergo_graphs),
            { events, { gen_event, start_link,
                        [{via, ergo_workspace_registry, {WorkspaceName, events, only}}]
                      },

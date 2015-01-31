@@ -89,18 +89,18 @@ build_state() ->
   #state{item_index=1, registry=ets:new(ergo_registration, [set, {keypos, #registration.key}])}.
 
 reg_name(RegKey=#registry_key{role=Role}, Pid, RegTab, Index) ->
-  ct:pal("Reg: ~p~n", [RegKey]),
+  %ct:pal("Reg: ~p~n", [RegKey]),
   register_response(ets:insert(RegTab, #registration{key=RegKey, pid=Pid, index=index_for(Role,Index)})).
 
 register_response(true) -> yes;
 register_response(_) -> no.
 
 unreg_name(RegKey, RegTab) ->
-  ct:pal("Unreg: ~p~n", [RegKey]),
+  %ct:pal("Unreg: ~p~n", [RegKey]),
   ets:delete(RegTab, RegKey).
 
 lookup(RegKey, RegTab) ->
-  ct:pal("Lookup: ~p -> ~p~n",[RegKey, ets:lookup(RegTab, RegKey)]),
+  %ct:pal("Lookup: ~p -> ~p~n",[RegKey, ets:lookup(RegTab, RegKey)]),
   case ets:lookup(RegTab, RegKey) of
     [#registration{pid=Pid}] -> Pid;
     [#registration{pid=Pid}|_Rest] -> Pid;

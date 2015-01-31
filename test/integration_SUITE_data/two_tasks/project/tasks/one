@@ -1,0 +1,6 @@
+#!/bin/bash
+ergo-dep -af bootstrap
+ergo-require in.txt
+ergo-produce middle.txt
+
+cp in.txt middle.txt

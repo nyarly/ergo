@@ -34,6 +34,10 @@ add_dep(Workspace, Taskname, From, To) ->
 add_prod(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_prod, From, To}).
 
+-spec(add_req(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:productname()) -> ok).
+add_req(Workspace, Taskname, From, To) ->
+  gen_server:call(?VIA(Workspace, Taskname), {add_req, From, To}).
+
 -spec(add_co(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:taskname()) -> ok).
 add_co(Workspace, Taskname, From, To) ->
   gen_server:call(?VIA(Workspace, Taskname), {add_co, From, To}).
@@ -55,23 +59,33 @@ skip(Workspace, Taskname) ->
 
 init({TaskSpec, WorkspaceDir}) ->
   {TaskName, Command, Args} = TaskSpec,
-  case task_running(TaskName) of
-    true -> {stop, {task_already_running, TaskName}};
-    _ ->
-      CmdPort = open_port(
-        {spawn_executable, Command},
-        [
-          {args, Args},
-          {env, task_env()},
-          {cd, WorkspaceDir},
-          exit_status,
-          use_stdio,
-          stderr_to_stdout
-        ]
-      ),
-      ergo_events:task_started(WorkspaceDir, {task, TaskName}),
-      {ok, #state{workspace=WorkspaceDir, name=TaskName, runspec=TaskSpec, cmdport=CmdPort, graphitems=[], elidable=true}}
-  end.
+  ergo_events:task_init(WorkspaceDir, {task, TaskName}),
+  process_flag(trap_exit, true),
+  CmdPort = launch_task(Command, Args, WorkspaceDir),
+  process_launch_result(CmdPort, WorkspaceDir, TaskName, TaskSpec).
+
+process_launch_result({'EXIT', Reason}, WorkspaceDir, TaskName, _TS) ->
+  ergo_events:task_failed(WorkspaceDir, {task, TaskName}, Reason),
+  {stop, Reason};
+process_launch_result(CmdPort, WorkspaceDir, TaskName, TaskSpec) ->
+  ct:pal("port opened for ~p:~p~n",[TaskName,CmdPort]),
+  ergo_events:task_started(WorkspaceDir, {task, TaskName}),
+  {ok, #state{workspace=WorkspaceDir, name=TaskName, runspec=TaskSpec, cmdport=CmdPort, graphitems=[], elidable=true}}.
+
+
+launch_task(Command, Args, Dir) ->
+  catch open_port(
+          {spawn_executable, Command},
+          [
+           {args, Args},
+           {env, task_env()},
+           {cd, Dir},
+           exit_status,
+           use_stdio,
+           stderr_to_stdout
+          ]
+         ).
+
 
 task_running(Name) ->
   lists:member(Name, ergo_tasks_soop:running_tasks()).
@@ -82,6 +96,8 @@ handle_call({add_dep, From, To}, _From, State) ->
   {reply, ok, add_item(State, {dep, From, To})};
 handle_call({add_prod, Task, Prod}, _From, State) ->
   {reply, ok, add_item(State, {prod, Task, Prod})};
+handle_call({add_req, Task, Prod}, _From, State) ->
+  {reply, ok, add_item(State, {req, Task, Prod})};
 handle_call({add_co, From, To}, _From, State) ->
   {reply, ok, add_item(State, {cotask, From, To})};
 handle_call({add_seq, From, To}, _From, State) ->
@@ -105,6 +121,7 @@ handle_info({CmdPort, {exit_status, Status}}, State=#state{workspace=Workspace,c
   exit_status(Workspace,Status,Name,GraphItems,Elides),
   {noreply, State};
 handle_info({'EXIT', CmdPort, ExitReason}, State=#state{cmdport=CmdPort,name=Name}) ->
+  ct:pal("~p~p~p~n", [Name, CmdPort, ExitReason]),
   exited(ExitReason,Name),
   {stop, task_completed, State};
 
@@ -130,7 +147,7 @@ skipped(State=#state{workspace=Workspace,name=Name, cmdport=CmdPort}) ->
   State#state{graphitems=[]}.
 
 task_env() ->
-  {}.
+  [].
 
 received_data(_Data,_Name) ->
   ok.
@@ -141,5 +158,5 @@ exit_status(Workspace,0,Name,Graph,Elides) ->
   ergo_graphs:task_batch(Workspace, Name, Graph),
   ergo_freshness:elidability(Workspace, Name, Elides),
   ergo_events:task_completed(Workspace,{task, Name});
-exit_status(Workspace,_Status,Name,_Graph,_Elides) ->
-  ergo_events:task_failed(Workspace,{task, Name}).
+exit_status(Workspace,Status,Name,_Graph,_Elides) ->
+  ergo_events:task_failed(Workspace, {task, Name}, {exit_status, Status}).

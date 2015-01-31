@@ -60,7 +60,7 @@ copy_dir(Source, Destination) ->
   dir_recurse(Source,
               fun(directory, Path) ->
                   mkdir([Destination,Path]) ;
-                 (_Type, Path) -> file:copy([Source,Path], [Destination,Path])
+                 (_Type, Path) -> copy_file([Source,Path], [Destination,Path])
               end).
 
 mkdir(Destination) ->
@@ -70,17 +70,23 @@ mkdir(Destination) ->
     Error -> throw({error, Error, [Destination]})
   end.
 
+copy_file(Source, Dest) ->
+  file:copy(Source, Dest),
+  {ok, FileInfo} = file:read_file_info(Source),
+  file:write_file_info(Dest, FileInfo).
+
 
 match_dir(Reference, Test) ->
   dir_recurse(Reference,
               fun(directory, _Path) -> ok;
                  (_Type, Path) ->
+                  ct:pal("~p", [[Reference, Test, Path]]),
                   RefHash = digest([Reference, Path]),
                   RefHash = digest([Test, Path])
               end).
 
 digest(Path) ->
-  {ok, Io, _FullName} = file:open(Path, [read, raw, binary]),
+  {ok, Io} = file:open(Path, [read, raw, binary]),
   HashContext = crypto:hash_init(sha),
   hash_file(Io, HashContext).
 
@@ -122,5 +128,9 @@ root_task() ->
 root_task(Config) ->
   Workspace = [proplists:get_value(priv_dir, Config), "project"],
   Id = ergo:run_build(Workspace, [{task, [<<"tasks/root">>]}]),
-  ergo:wait_for_build(Workspace, Id),
+  ergo:wait_on_build(Workspace, Id),
+  match_dir([proplists:get_value(priv_dir, Config), "result"], Workspace),
   ok.
+
+%%% Needed test cases:
+%%% * Failed build
