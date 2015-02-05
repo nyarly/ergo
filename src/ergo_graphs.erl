@@ -2,7 +2,7 @@
 -behavior(gen_server).
 %% API
 -export([start_link/1,
-         requires/3,produces/3,joint_tasks/3,ordered_tasks/3,get_products/2,get_dependencies/2,build_list/2,task_batch/3]).
+         dependency/3,requires/3,produces/3,joint_tasks/3,ordered_tasks/3,get_products/2,get_dependencies/2,build_list/2,task_batch/3]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
@@ -43,8 +43,8 @@ start_link(Workspace) ->
 
 %% @spec:	requires(First::ergo:produced(), Second::ergo:produced()) -> ok.
 %% @end
--spec(requires(ergo:workspace_name(), ergo:produced(), ergo:produced()) -> ok).
-requires(Workspace, First, Second) ->
+-spec(dependency(ergo:workspace_name(), ergo:produced(), ergo:produced()) -> ok).
+dependency(Workspace, First, Second) ->
   gen_server:call(?VIA(Workspace), {new_dep, First, Second}).
 
 %% @spec:	produces(Task::ergo:task(), Product::ergo:produced()) -> ok.
@@ -52,6 +52,12 @@ requires(Workspace, First, Second) ->
 -spec(produces(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
 produces(Workspace, Task, Product) ->
   gen_server:call(?VIA(Workspace), {new_prod, Task, Product}).
+
+%% @spec:	produces(Task::ergo:task(), Product::ergo:produced()) -> ok.
+%% @end
+-spec(requires(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
+requires(Workspace, Task, Product) ->
+  gen_server:call(?VIA(Workspace), {new_req, Task, Product}).
 
 %% @spec:	joint_tasks(First::ergo:task(), Second::ergo:task()) -> ok.
 %% @end
@@ -107,6 +113,8 @@ init([Workspace]) ->
 
 handle_call({new_dep, FromProduct, ToProduct}, _From, State) ->
   {reply, new_dep(State, FromProduct, ToProduct), State};
+handle_call({new_req, Task, Product}, _From, State) ->
+  {reply, new_req(State, Task, Product), State};
 handle_call({new_prod, Task, Product}, _From, State) ->
   {reply, new_prod(State, Task, Product), State};
 handle_call({co_task, WhenTask, AlsoTask}, _From, State) ->
@@ -118,7 +126,8 @@ handle_call({dependencies, Task}, _From, State) ->
 handle_call({task_seq, First, Second}, _From, State) ->
   {reply, task_seq(State, First, Second), State};
 handle_call({build_list, Targets}, _From, State) ->
-  {reply, handle_build_list(State,Targets), State};
+  {NewState, Result} = handle_build_list(State,Targets),
+  {reply, Result, NewState};
 handle_call({task_batch, Task, Graph}, _From, State) ->
   {reply, process_task_batch(Task, Graph, State), State};
 
@@ -145,33 +154,40 @@ build_state(WorkspaceRoot) ->
   build_state(WorkspaceRoot, protected).
 
 build_state(WorkspaceRoot, Access) ->
-  Vertices = ets:new(vertices, [set, Access, {keypos, 2}]),
-  Edges = ets:new(edges, [bag, Access, {keypos, 2}]),
-  Provenence = ets:new(provenence, [bag, Access, {keypos, 2}]),
-  ets:insert(Vertices, #next_id{kind=edge_ids, value=0}),
   {ok,Regex} = re:compile(["^", filename:flatten(filename:absname(WorkspaceRoot))]),
-  #state{ workspace = WorkspaceRoot, workspace_root_re = Regex, edges=Edges, vertices=Vertices, provenence=Provenence }.
+  load_from(#state{ workspace = WorkspaceRoot, workspace_root_re = Regex }).
 
-cleanup_state(State) ->
-  ets:delete(State#state.edges),
-  ets:delete(State#state.vertices),
-  ets:delete(State#state.provenence),
+cleanup_state(#state{edges=Etab,vertices=Vtab,provenence=Ptab}) ->
+  maybe_delete_table(Etab),
+  maybe_delete_table(Vtab),
+  maybe_delete_table(Ptab),
   ok.
+
+depgraph_path_for(Workspace) ->
+  [Workspace, "/.ergo/depgraph"].
+
+dump_to(State=#state{workspace=Workspace}) ->
+  dump_to(State, depgraph_path_for(Workspace)).
 
 -spec dump_to(#state{}, file:name()) -> #state{}.
 dump_to(State=#state{vertices=VTab, edges=ETab, provenence=PTab}, FilenameBase) ->
-  ets:tab2file(VTab, [FilenameBase, ".vtab"]),
-  ets:tab2file(ETab, [FilenameBase, ".etab"]),
-  ets:tab2file(PTab, [FilenameBase, ".ptab"]),
+  filelib:ensure_dir(FilenameBase),
+  ct:pal("D2 ~p ~p ~p", [ETab, VTab, PTab]),
+  ok = ets:tab2file(VTab, [FilenameBase, ".vtab"]),
+  ok = ets:tab2file(ETab, [FilenameBase, ".etab"]),
+  ok = ets:tab2file(PTab, [FilenameBase, ".ptab"]),
   State.
+
+load_from(State=#state{workspace=Workspace}) ->
+  load_from(State, depgraph_path_for(Workspace)).
 
 load_from(State, FilenameBase) ->
   load_from(State, FilenameBase, protected).
 
 -spec load_from(#state{}, file:name(), public | protected) -> #state{}.
 load_from(State, FilenameBase, Access) ->
-  VTab = load_or_build([FilenameBase, ".vtab"], vertices, set, Access),
   ETab = load_or_build([FilenameBase, ".etab"], edges, bag, Access),
+  VTab = load_or_build([FilenameBase, ".vtab"], vertices, set, Access),
   PTab = load_or_build([FilenameBase, ".ptab"], provenence, bag, Access),
   maybe_delete_table(State#state.edges),
   maybe_delete_table(State#state.vertices),
@@ -179,24 +195,42 @@ load_from(State, FilenameBase, Access) ->
   State#state{edges = ETab, vertices = VTab, provenence = PTab}.
 
 load_or_build(Filename, TableName, Type, Access) ->
+  ct:pal("LrB: ~p", [Filename]),
   case ets:file2tab(Filename) of
-    {ok, Tab} -> Tab;
-    {error, _} -> ets:new(TableName, [Type, Access, {keypos, 2}])
+    {ok, Tab} ->
+      ct:pal("Loaded: ~p", [Tab]),
+      Tab;
+    {error, _Error} ->
+      Tab = build_table(TableName, Type, Access),
+      ct:pal("Built: ~p", [Tab]),
+      Tab
   end.
 
+build_table(vertices, Type, Access) ->
+  VTab = ets:new(vertices, [Type, Access, {keypos, 2}]),
+  ets:insert(VTab, #next_id{kind=edge_ids, value=0}),
+  VTab;
+build_table(Name, Type, Access) ->
+  ets:new(Name, [Type, Access, {keypos, 2}]).
 
 maybe_delete_table(undefined) ->
+  ct:pal("no-delete"),
   ok;
 maybe_delete_table(Table) ->
-  ets:delete(Table).
+  ct:pal("delete: ~p", [Table]),
+  case ets:info(Table) of
+    undefined -> ok;
+    _ -> ets:delete(Table)
+  end.
 
 -spec(process_task_batch(ergo:taskname(), [ergo:graph_item()], #state{}) -> ok).
-process_task_batch(Taskname, ReceivedItems, State=#state{workspace=Workspace}) ->
-  maybe_notify_changed( record_task_batch(Taskname, ReceivedItems, State), Workspace).
+process_task_batch(Taskname, ReceivedItems, State) ->
+  maybe_notify_changed( record_task_batch(Taskname, ReceivedItems, State), State).
 
-maybe_notify_changed(true, Workspace) ->
+maybe_notify_changed(true, State=#state{workspace=Workspace}) ->
+  dump_to(State),
   ergo_events:graph_changed(Workspace);
-maybe_notify_changed(false, _Workspace) ->
+maybe_notify_changed(false, _State) ->
   ok.
 
 -spec(record_task_batch(ergo:taskname(), [ergo:graph_item()], #state{}) -> true | false).
@@ -215,7 +249,6 @@ record_task_batch(Taskname, ReceivedItems, State) ->
 
 -spec add_statement(#state{}, ergo:taskname(), ergo:graph_item()) -> true | false.
 add_statement(State=#state{provenence=Provs}, Taskname, Item) ->
-  ?debugMsg("in add_statement/3"),
   {Newness, Edge} = add_statement(State, edge_for_statement(Item)),
   EdgeId = element(#seq.edge_id, Edge),
   ets:insert(Provs, #provenence{edge_id=EdgeId,task=Taskname}),
@@ -300,6 +333,12 @@ new_dep(State, {product, ProductName}, {product, DependsOn}) ->
   add_product(State, ProductName), add_product(State, DependsOn),
   add_statement(State, #dep{from=ProductName,to=DependsOn}).
 
+-spec new_req(#state{}, ergo:task(), #product{}) ->
+  {ok, edge_record()} | {exists,edge_record()}.
+new_req(State, {task, TaskName}, {product, ProductName}) ->
+  add_task(State, TaskName), add_product(State, ProductName),
+  add_statement(State, #requirement{task=TaskName,requires=ProductName}).
+
 -spec new_prod(#state{}, ergo:task(), #product{}) ->
   {ok, edge_record()} | {exists,edge_record()}.
 new_prod(State, {task, TaskName}, {product, ProductName}) ->
@@ -330,6 +369,11 @@ add_statement(State, Edge = #seq{before=Before,then=Then}) ->
 add_statement(State, Edge = #cotask{task=Task,also=Also}) ->
   Query = qlc:q([E|| E <- ets:table(State#state.edges),
                          is_record(E, cotask), E#cotask.task =:= Task, E#cotask.also =:= Also]),
+  insert_edge(State, Edge, Query);
+
+add_statement(State, Edge = #requirement{task=Task,requires=Product}) ->
+  Query = qlc:q([E|| E <- ets:table(State#state.edges),
+                         is_record(E, requirement), E#requirement.task =:= Task, E#requirement.requires =:= Product]),
   insert_edge(State, Edge, Query);
 
 add_statement(State, Edge = #production{task=Task,produces=Product}) ->
@@ -370,18 +414,6 @@ products(State, {task, TaskName}) ->
   qlc:eval(qlc:q([ E#production.produces || E <- ets:table(State#state.edges),
                                             E#production.task =:= TaskName ])).
 
-% Task for product
--spec(task_for_product(#state{}, productname()) -> #task{}).
-task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
-  TaskQ = qlc:q([ V || E <- ets:table(Edges), V <- ets:table(Vertices),
-                       E#production.produces =:= ProductName, E#production.task =:= V#task.name ]),
-  FoundTasks = qlc:eval(TaskQ),
-  case length(FoundTasks) of
-    0 -> false;
-    1 -> hd(FoundTasks);
-    _ -> {err, {violated_invariant, single_producer}}
-  end.
-
 -spec(dependencies(#state{}, ergo:produced() | ergo:task()) -> [ergo:productname()]).
 dependencies(State, {product, ProductName}) ->
   prod_deps(State, ProductName);
@@ -394,6 +426,7 @@ prod_deps(State, ProductName) ->
 
 -spec(task_deps(#state{}, ergo:taskname()) -> [ergo:productname()]).
 task_deps(State, TaskName) ->
+  ct:pal("~p:~p ~p", [?FILE, ?LINE, TaskName]),
   qlc:eval(task_deps_query(State, TaskName)).
 
 -spec(prod_dep_query(#state{}, productname()) -> qlc:query_handle()).
@@ -402,6 +435,7 @@ prod_dep_query(#state{edges=Edges}, ProductName) ->
 
 -spec(task_deps_query(#state{}, taskname()) -> qlc:query_handle()).
 task_deps_query(#state{edges=Edges}, TaskName) ->
+  ct:pal("~p ~p", [?FILE, ets:info(Edges)]),
   qlc:q([Depcy#dep.to || Pdctn <- ets:table(Edges), Depcy <- ets:table(Edges),
                 TaskName =:= Pdctn#production.task, Pdctn#production.produces =:= Depcy#dep.from ]).
 
@@ -414,10 +448,22 @@ task_deps_query(#state{edges=Edges}, TaskName) ->
 %                    Production#production.task =:= TaskName ]).
 
 -spec(handle_build_list(#state{}, [ergo:target()]) -> ergo:build_spec()).
-handle_build_list(State, Targets) ->
+handle_build_list(BaseState, Targets) ->
+  State = load_from(BaseState),
+  {State, run_build_list(State, targets_to_tasks(State, Targets))}.
+
+targets_to_tasks(State, Targets) ->
+  TasksList = tasks_from_targets(State, Targets),
+  case [Error || {error, Error} <- TasksList] of
+    [] -> [Taskname || {task, Taskname} <- TasksList];
+    ErrorList -> {error, ErrorList}
+  end.
+
+run_build_list(_State, Errors={error, _}) ->
+  Errors;
+run_build_list(State, TargetTasks) ->
   SeqGraph = seq_graph(State),
   AlsoGraph = also_graph(State),
-  TargetTasks = [Taskname || {task, Taskname} <- tasks_from_targets(State, Targets)],
 
   TargetVertices = tasknames_to_vertices(AlsoGraph, TargetTasks),
   BaseTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(TargetVertices, AlsoGraph)),
@@ -581,10 +627,13 @@ all_tasks(#state{vertices=Vertices}) ->
 
 -spec(all_seq_edges(#state{}) -> [#seq{}]).
 all_seq_edges(State) ->
-  qlc:eval(qlc:append(implied_seq_query(State), explicit_seq_query(State))).
+  qlc:eval(qlc:append([dep_implied_seq_query(State), req_implied_seq_query(State), explicit_seq_query(State)])).
 
-implied_seq_query(State) ->
+dep_implied_seq_query(State) ->
   qlc:q([Edge || Edge <- task_to_task_dep_query(State)]).
+
+req_implied_seq_query(State) ->
+  qlc:q([Edge || Edge <- task_to_task_req_query(State)]).
 
 explicit_seq_query(#state{edges=Edges}) ->
   qlc:q([#gen_edge{from=Seq#seq.before, to=Seq#seq.then, implied_by=[Seq#seq.edge_id]} ||
@@ -592,24 +641,51 @@ explicit_seq_query(#state{edges=Edges}) ->
 
 -spec(all_cotask_edges(#state{}) -> [#cotask{}]).
 all_cotask_edges(State) ->
-  qlc:eval(qlc:append(implied_cotask_query(State), explicit_cotask_query(State))).
+  qlc:eval(qlc:append([dep_implied_cotask_query(State), req_implied_cotask_query(State), explicit_cotask_query(State)])).
 
-implied_cotask_query(State) ->
+dep_implied_cotask_query(State) ->
   qlc:q([#gen_edge{from=From,to=To,implied_by=ImpliedBy} ||
          #gen_edge{from=To,to=From,implied_by=ImpliedBy} <- task_to_task_dep_query(State)]).
+
+req_implied_cotask_query(State) ->
+  qlc:q([#gen_edge{from=From,to=To,implied_by=ImpliedBy} ||
+         #gen_edge{from=To,to=From,implied_by=ImpliedBy} <- task_to_task_req_query(State)]).
 
 explicit_cotask_query(#state{edges=Edges}) ->
   qlc:q([#gen_edge{from=Also#cotask.task, to=Also#cotask.also, implied_by=[Also#cotask.edge_id]} ||
          Also <- ets:table(Edges), is_record(Also, cotask)]).
 
 
-%  (Prior) --- PriorPdctn --- > (Dep)
-%                                 |
-%                                 |
-%                               Depcy
-%                                 |
-%                                 v
-%  (Post) --- PostPdctn -----> (Prod)
+% A Req + Pdctn edge imply a Seq and a reverse Cotask edge
+%  (Prior) -----+
+%                \
+%     ^           \
+%     |            \
+%  [Seq/            \
+%    Cotask]       Req
+%     |               \
+%     v                \
+%                       \
+%                        \
+%                        _|
+%  (Post) --- Pdctn --> (Prod)
+-spec(task_to_task_req_query(#state{}) -> qlc:query_handle()).
+task_to_task_req_query(#state{edges=Edges}) ->
+  qlc:q([#gen_edge{from=Pdctn#production.task, to=Req#requirement.task,
+                  implied_by=[Pdctn#production.edge_id,Req#requirement.edge_id]} ||
+         Pdctn <- ets:table(Edges), Req <- ets:table(Edges),
+         Pdctn#production.produces =:= Req#requirement.requires
+        ]).
+
+
+% The PriorPdctn, Depcy and PostPdctn edges imply a Seq edge (and a reverse Cotask)
+%    ( Prior  ) --- PriorPdctn -- > (Dep)
+%     |      ^                        |
+%     |      |                        |
+%   [Seq] [Cotask]                  Depcy
+%     |      |                        |
+%     v      |                        v
+%    (  Post  ) --- PostPdctn ---> (Prod)
 -spec(task_to_task_dep_query(#state{}) -> qlc:query_handle()).
 task_to_task_dep_query(#state{edges=Edges}) ->
   qlc:q([#gen_edge{from=PriorPdctn#production.task, to=PostPdctn#production.task,
@@ -624,11 +700,27 @@ tasks_from_targets(State, Targets) ->
   lists:map(
     fun(Target) ->
         case Target of
-          {product, ProductName} -> {task, (task_for_product(State, ProductName))#task.name};
+          {product, ProductName} ->
+            case task_for_product(State, ProductName) of
+              {err, Error} -> {error, Error};
+              #task{name=Name} -> {task, Name}
+            end;
           {task, _} -> Target
         end
     end,
     Targets ).
+
+% Task for product
+-spec(task_for_product(#state{}, productname()) -> #task{}).
+task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
+  TaskQ = qlc:q([ V || E <- ets:table(Edges), V <- ets:table(Vertices),
+                       E#production.produces =:= ProductName, E#production.task =:= V#task.name ]),
+  FoundTasks = qlc:eval(TaskQ),
+  case length(FoundTasks) of
+    1 -> hd(FoundTasks);
+    0 -> {err, {no_task_produces, ProductName}};
+    _ -> {err, {violated_invariant, single_producer}}
+  end.
 
 
 % find_product_vertex(State, ProductName) ->
@@ -649,10 +741,9 @@ digraph_test_() ->
   DependsOn = "x.in",
   TaskName = [<<"compile">>,  <<"x">>],
   OtherTaskName = [<<"test">>, <<"x">>],
-  DumpFilename = "test-dump.ergograph",
 
   {foreach, %local, %digraphs are trapped in their process
-    fun() -> build_state("/", public) end, %setup
+    fun() -> build_state("graph-test", public) end, %setup
     fun(State) -> cleanup_state(State) end, %teardown
     [
      fun(State) ->
@@ -710,12 +801,21 @@ digraph_test_() ->
      end,
      fun(State) ->
          ?_test( begin
-                   new_dep(State, {product, ProductName}, {product, DependsOn}),
+                   dump_to(State),
+                   ?assertEqual(
+                      {error, [{no_task_produces, ProductName}]},
+                      handle_build_list(State, [{product, ProductName}])
+                     )
+                 end)
+     end,
+     fun(State) ->
+         ?_test( begin
+                   new_req(State, {task, TaskName}, {product, DependsOn}),
                    ?assertMatch({ok,#production{}},new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
-                   ?assertMatch({ok,#production{}},new_prod(State, {task, TaskName}, {product, ProductName})),
+                   dump_to(State),
                    ?assertEqual(
                       [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
-                      handle_build_list(State, [{product, ProductName}])
+                      handle_build_list(State, [{task, TaskName}])
                      )
                  end)
      end,
@@ -724,8 +824,7 @@ digraph_test_() ->
                    new_dep(State, {product, ProductName}, {product, DependsOn}),
                    ?assertMatch({ok, #production{}}, new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
                    ?assertMatch({ok, #production{}}, new_prod(State, {task, TaskName}, {product, ProductName})),
-                   ?assertMatch(#state{}, dump_to(State, DumpFilename)),
-                   NewState = load_from(#state{}, DumpFilename),
+                   NewState = dump_to(State),
                    ?assertEqual(
                       [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
                       handle_build_list(NewState, [{product, ProductName}])
