@@ -1,0 +1,24 @@
+#!/bin/sh
+
+#ergo-produce middle.txt
+#ergo-produce middle.txt -t tasks/one
+
+SEP=none
+BADSEP=""
+
+for sep in " " , "#" + - = 0; do
+  if (IFS= ;echo "$*") | grep -vq "$sep"; then
+    SEP=$sep
+    break
+  else
+    BADSEP=$BADSEP$sep
+  fi
+done
+
+if [ "$SEP" = "none" ]; then
+  echo "Couldn't find a separator in \"$BADSEP\" for args"
+  exit 1
+fi
+
+${ERL_CALL} -a "ergo_cli taskfile [\"${ERGO_WORKSPACE}\", \"${ERGO_TASK_ID}\", \"${0}\", \"${sep}\", \"$(IFS=$sep;echo "${*}")\"]" -name ${ERGO_NODE}
+echo

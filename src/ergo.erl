@@ -1,10 +1,9 @@
 -module(ergo).
 -export_type([produced/0, task/0, taskname/0, productname/0, taskspec/0, build_spec/0, target/0, command_result/0, graph_item/0, workspace_name/0]).
 
--export([watch/0, watch/1, wait_on_build/1, wait_on_build/2, run_build/1,
-         run_build/2, add_product/2, add_file_dep/2, add_cotask/2,
-         add_task_seq/2, this_task_preceeds/1, this_task_follows/1, also_run/1,
-         run_whenever/1, dont_elide/0, skip/0, setup/0]).
+-export([watch/0, watch/1, wait_on_build/1, wait_on_build/2, run_build/1, run_build/2, quiet_run_build/2,
+         add_product/1, add_product/2, add_product/4, add_required/1, add_required/2, add_required/4, add_file_dep/2, add_cotask/2, add_cotask/4,
+         add_task_seq/2, add_task_seq/4, dont_elide/0, skip/0, setup/0]).
 
 -type taskname() :: [binary()]. % should change to _name
 -type productname() :: file:name_all(). % here too
@@ -46,9 +45,17 @@ wait_on_build(Id) ->
 run_build(Targets) ->
   run_build(ergo_workspace:current(), Targets).
 
+-spec(add_product(productname()) -> command_response()).
+add_product(Product) ->
+  add_product(ergo_task:current(), Product).
+
 -spec(add_product(taskname(), productname()) -> command_response()).
 add_product(Task, Product) ->
   add_product(ergo_workspace:current(), ergo_task:current(), Task, Product).
+
+-spec(add_required(productname()) -> command_response()).
+add_required(Product) ->
+  add_required(ergo_task:current(), Product).
 
 -spec(add_required(taskname(), productname()) -> command_response()).
 add_required(Task, Product) ->
@@ -65,22 +72,6 @@ add_cotask(Task, Also) ->
 -spec(add_task_seq(taskname(), taskname()) -> command_response()).
 add_task_seq(First, Second) ->
   add_task_seq(ergo_workspace:current(), ergo_task:current(), First, Second).
-
--spec(this_task_preceeds(taskname()) -> command_response()).
-this_task_preceeds(Other) ->
-  add_task_seq(ergo_task:current(), Other).
-
--spec(this_task_follows(taskname()) -> command_response()).
-this_task_follows(Other) ->
-  add_task_seq(Other, ergo_task:current()).
-
--spec(also_run(taskname()) -> command_response()).
-also_run(Other) ->
-  add_cotask(ergo_task:current(), Other).
-
--spec(run_whenever(taskname()) -> command_response()).
-run_whenever(Other) ->
-  add_cotask(Other, ergo_task:current()).
 
 -spec(dont_elide() -> ok).
 dont_elide() ->
@@ -111,6 +102,11 @@ watch(Workspace) ->
 run_build(Workspace, Targets) ->
   {ok, _Pid} = ergo_sup:start_workspace(Workspace),
   watch(Workspace),
+  ergo_workspace:start_build(Workspace, Targets).
+
+-spec(quiet_run_build(workspace_name(), [target()]) -> command_response()).
+quiet_run_build(Workspace, Targets) ->
+  {ok, _Pid} = ergo_sup:start_workspace(Workspace),
   ergo_workspace:start_build(Workspace, Targets).
 
 -spec(add_product(workspace_name(), taskname(), taskname(), productname()) -> command_response()).

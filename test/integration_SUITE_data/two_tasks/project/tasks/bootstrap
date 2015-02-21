@@ -1,2 +1,2 @@
 #!/bin/bash
-ergo-produce middle.txt -t tasks/one
+ergo-taskfile -p middle.txt -t tasks/one

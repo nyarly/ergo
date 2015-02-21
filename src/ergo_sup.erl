@@ -29,13 +29,10 @@ start_workspace(Name) ->
                           {ergo_workspace_sup, start_link, [Name]},
                           permanent, 5, supervisor, [ergo_workspace_sup]}) of
     {ok, Pid} ->
-      ct:pal("ok ~p~n", [Pid]),
       {ok, Pid};
     {error, {already_started, Pid}} ->
-      ct:pal("already ~p~n", [Pid]),
       {ok, Pid};
     Error = {error, _} ->
-      ct:pal("err: ~p~n", [Error]),
       Error;
     Any -> {error, Any}
   end.

@@ -3,7 +3,7 @@
 
 -include_lib("kernel/include/file.hrl").
 %% API
--export([start_link/1, start_task/2, start_build/2, current/0, setup/0]).
+-export([start_link/1, start_task/3, start_build/2, current/0, setup/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
@@ -18,9 +18,9 @@ start_link(WorkspaceDir) ->
 %% @spec:	start_task(TaskName::string()) -> ok.
 %% @end
 
--spec(start_task(ergo:workspace_name(), ergo:taskspec()) -> ok).
-start_task(Workspace, RunSpec) ->
-  gen_server:call(?VIA(Workspace), {start_task, RunSpec}).
+-spec(start_task(ergo:workspace_name(), ergo:taskspec(), term()) -> ok).
+start_task(Workspace, RunSpec, Config) ->
+  gen_server:call(?VIA(Workspace), {start_task, RunSpec, Config}).
 
 -spec(start_build(ergo:workspace_name(), [ergo:target()]) -> ok).
 start_build(Workspace, Targets) ->
@@ -91,8 +91,8 @@ build_state(WorkspaceDir) ->
 handle_call({start_build, {Targets}}, _From, State=#state{workspace_dir=Workspace,build_count=BuildCount}) ->
   ergo_build:start(Workspace, BuildCount, Targets),
   {reply, BuildCount, State#state{build_count=BuildCount+1}};
-handle_call({start_task, RunSpec}, _From, State) ->
-  Reply = ergo_tasks_soop:start_task(State#state.task_limit, RunSpec, State#state.workspace_dir),
+handle_call({start_task, RunSpec, Config}, _From, State=#state{task_limit=TaskLimit, workspace_dir=Workspace}) ->
+  Reply = ergo_tasks_soop:start_task(TaskLimit, RunSpec, Workspace, Config),
   {reply, Reply, State};
 handle_call(_Request, _From, State) ->
   Reply = ok,

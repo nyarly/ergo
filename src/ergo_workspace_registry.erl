@@ -11,7 +11,7 @@
 -define(SERVER, ?MODULE).
 -record(state, {item_index::integer(), registry}).
 -record(registry_key, {workspace::atom(),role::roletype(),name::term()}).
--record(registration, {key::#registry_key{}|'_',pid::pid()|'_',index::binary()}).
+-record(registration, {key::#registry_key{}|'_',pid::pid()|'_',monref::reference()|'_',index::binary()}).
 
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -58,12 +58,15 @@ handle_call({process_id, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, process_id(RegKey, RegTab), State};
 handle_call({name_for_id, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, name_for_id(RegKey, RegTab), State};
-handle_call(_Request, _From, State) ->
+handle_call(Request, _From, State) ->
   {reply, unknown_request, State}.
 
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
+handle_info({'DOWN', MonitorRef, process, Pid, _Info}, State) ->
+  lost_pid(MonitorRef, Pid, State),
+  {noreply, State};
 handle_info(_Info, State) ->
   {noreply, State}.
 
@@ -89,37 +92,48 @@ build_state() ->
   #state{item_index=1, registry=ets:new(ergo_registration, [set, {keypos, #registration.key}])}.
 
 reg_name(RegKey=#registry_key{role=Role}, Pid, RegTab, Index) ->
-  %ct:pal("Reg: ~p~n", [RegKey]),
-  register_response(ets:insert(RegTab, #registration{key=RegKey, pid=Pid, index=index_for(Role,Index)})).
+  MonitorRef = monitor(process, Pid),
+  Reg = #registration{key=RegKey, pid=Pid, monref=MonitorRef, index=index_for(Role,Index)},
+  register_response(ets:insert(RegTab, Reg), Reg).
 
-register_response(true) -> yes;
-register_response(_) -> no.
+register_response(true, _Reg) -> yes;
+register_response(_, #registration{monref=MonRef}) ->
+  demonitor(MonRef),
+  no.
+
+lost_pid(MonRef, Pid, #state{registry=RegTab}) ->
+  demonitor(MonRef),
+  unreg_name(name_for_pid(Pid, RegTab), RegTab),
+  ok.
+
+name_for_pid(Pid, RegTab) ->
+  case ets:match_object(RegTab, #registration{pid=Pid, _='_'}) of
+    [#registration{key=Key}|_Rest] -> Key;
+    _ -> unknown_pid
+  end.
+
 
 unreg_name(RegKey, RegTab) ->
-  %ct:pal("Unreg: ~p~n", [RegKey]),
   ets:delete(RegTab, RegKey).
 
 lookup(RegKey, RegTab) ->
-  %ct:pal("Lookup: ~p -> ~p~n",[RegKey, ets:lookup(RegTab, RegKey)]),
   case ets:lookup(RegTab, RegKey) of
-    [#registration{pid=Pid}] -> Pid;
     [#registration{pid=Pid}|_Rest] -> Pid;
     [] -> undefined
   end.
 
 process_id(RegKey, RegTab) ->
-  case hd(ets:lookup(RegTab, RegKey)) of
-    #registration{index=Id} -> Id;
+  case ets:lookup(RegTab, RegKey) of
+    [#registration{index=Id}|_Rest] -> Id;
     _ -> unknown
   end.
 
 name_for_id(ProcId, RegTab) ->
-  case hd(ets:match_object(RegTab, #registration{index=ProcId, _='_'})) of
-    #registration{key=RegKey} -> RegKey;
+  Res = case ets:match_object(RegTab, #registration{index=ProcId, _='_'}) of
+    [#registration{key=#registry_key{workspace=WS,role=R,name=N}}|_Rest] -> {WS,R,N};
     _ -> unknown
-  end.
-
-
+  end,
+  Res.
 
 send(RegKey, Message, RegTab) ->
   case lookup(RegKey, RegTab) of

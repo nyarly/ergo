@@ -12,10 +12,16 @@
 %%--------------------------------------------------------------------
 suite() ->
   [
-   {timetrap,{minutes,10}},
+   {timetrap,{seconds,30}},
    {create_priv_dir, auto_per_tc}
   ].
 init_per_suite(Config) ->
+  %dbg:tracer(),
+  %{ok, _} = dbg:tpl(ergo_task,record_and_report, []),
+  %dbg:p(all,c),
+  DataDir = proplists:get_value(data_dir, Config),
+  PrivDir = proplists:get_value(priv_dir, Config),
+  copy_dir(DataDir, PrivDir),
   Config.
 end_per_suite(_Config) ->
   ok.
@@ -24,9 +30,9 @@ init_per_group(_GroupName, Config) ->
 end_per_group(_GroupName, _Config) ->
   ok.
 init_per_testcase(TestCase, Config) ->
+  ct:pal("BEGIN: ~p", [TestCase]),
   application:start(crypto),
   application:start(mnesia),
-  copy_test_project(Config, TestCase),
   application:start(ergo),
   Config.
 end_per_testcase(_TestCase, _Config) ->
@@ -37,7 +43,7 @@ end_per_testcase(_TestCase, _Config) ->
 groups() ->
   [].
 all() ->
-  [root_task].
+  [root_task, two_tasks].
 
 %%--
 %% HELPERS
@@ -51,7 +57,7 @@ copy_test_project(Config, TestSub, Proj, Conf, Res) ->
   DataDir = proplists:get_value(data_dir, Config),
   PrivDir = proplists:get_value(priv_dir, Config),
   application:set_env(ergo, mnesia_dir, filename:flatten([PrivDir, Conf, "/storage"]), [{persistent, true}]),
-  [copy_dir([DataDir, TestSub, '/', SubDir], [PrivDir, SubDir]) || SubDir <- [Proj, Conf, Res]].
+  [copy_dir([DataDir, TestSub, '/', SubDir], [PrivDir, TestSub, '/', SubDir]) || SubDir <- [Proj, Conf, Res]].
 
 
 -include_lib("kernel/include/file.hrl").
@@ -77,12 +83,16 @@ copy_file(Source, Dest) ->
 
 
 match_dir(Reference, Test) ->
+  ct:pal("Comparing ~p to ~p", [filename:flatten(Path) || Path <- [Reference, Test]]),
   dir_recurse(Reference,
               fun(directory, _Path) -> ok;
                  (_Type, Path) ->
-                  ct:pal("~p", [[Reference, Test, Path]]),
+                  ct:pal("Checking: ~p", [filename:flatten(['.'|Path])]),
                   RefHash = digest([Reference, Path]),
-                  RefHash = digest([Test, Path])
+                  case digest([Test, Path]) of
+                    RefHash -> ok;
+                    _ -> throw({fail, {nomatch, Path}})
+                  end
               end).
 
 digest(Path) ->
@@ -126,11 +136,34 @@ dir_recurse(_Dir, Path, Fun, {ok, #file_info{type=Type}}) when Type =:= regular;
 root_task() ->
   [].
 root_task(Config) ->
-  Workspace = [proplists:get_value(priv_dir, Config), "project"],
+  Workspace = [proplists:get_value(priv_dir, Config), "root_task/project"],
   Id = ergo:run_build(Workspace, [{task, [<<"tasks/root">>]}]),
   ergo:wait_on_build(Workspace, Id),
-  match_dir([proplists:get_value(priv_dir, Config), "result"], Workspace),
+  match_dir([proplists:get_value(priv_dir, Config), "root_task/result"], Workspace),
+  ok.
+
+two_tasks() ->
+  [].
+two_tasks(Config) ->
+  Workspace = [proplists:get_value(priv_dir, Config), "two_tasks/project"],
+  Id = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo:wait_on_build(Workspace, Id),
+  match_dir([proplists:get_value(priv_dir, Config), "two_tasks/result"], Workspace),
+  Id2 = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo:wait_on_build(Workspace, Id2),
   ok.
 
 %%% Needed test cases:
 %%% * Failed build
+%%% * Empty config
+%%% * Missing task file
+%%%
+%%% Variations on two-task
+%%% * file-file dep (i.e. out.txt -> in.txt)
+%%% * more specific rule file e.g. "ergo-dep -af tasks/who-makes middle.txt"
+%%%
+%%% Two task variants of subsequent runs
+%%% * w/o changes
+%%% * in.txt changed
+%%% * tasks/one changed
+%%% * tasks/two changed

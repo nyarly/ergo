@@ -1,6 +1,6 @@
 #!/bin/bash
-ergo-dep -af bootstrap
-ergo-require in.txt
-ergo-produce middle.txt
+ergo-dep -af tasks/bootstrap
+ergo-taskfile -r in.txt
+ergo-taskfile -p middle.txt
 
 cp in.txt middle.txt
