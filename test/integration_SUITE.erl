@@ -16,9 +16,11 @@ suite() ->
    {create_priv_dir, auto_per_tc}
   ].
 init_per_suite(Config) ->
-  %dbg:tracer(),
+  dbg:tracer(),
   %{ok, _} = dbg:tpl(ergo_task,record_and_report, []),
-  %dbg:p(all,c),
+  %{ok, _} = dbg:tpl(ergo_build,handle_event, []),
+  {ok, _} = dbg:tpl(ergo_freshness,digest_list, [{'_',[],[{return_trace}]}]),
+  dbg:p(all,c),
   DataDir = proplists:get_value(data_dir, Config),
   PrivDir = proplists:get_value(priv_dir, Config),
   copy_dir(DataDir, PrivDir),

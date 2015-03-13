@@ -53,8 +53,8 @@ format_event(Tag, Event) ->
 
 tagged_event(TagString, {graph_changed}) ->
   ok;
-tagged_event(TagString, {build_start, Workspace, BuildId}) ->
-  io:format("~n~s(ergo): build (id ~p) starting in:~n   ~s ~n", [TagString, BuildId, Workspace]);
+tagged_event(TagString, {build_start, Workspace, BuildId, Targets}) ->
+  io:format("~n~s(ergo): build (id ~p) targets: ~p starting in:~n   ~s ~n", [TagString, BuildId, Targets, Workspace]);
 tagged_event(TagString, {build_completed, BuildId, true, _Msg}) ->
   io:format("~s(ergo): build id ~p completed successfully.~n", [TagString, BuildId]);
 tagged_event(TagString, {build_completed, BuildId, false, Msg}) ->
@@ -66,8 +66,10 @@ tagged_event(TagString, {task_started, {task, TaskName}}) ->
   io:format("~s(ergo): start: ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
 tagged_event(TagString, {task_completed, {task, TaskName}}) ->
   io:format("~s(ergo): done: ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+tagged_event(TagString, {task_skipped, {task, TaskName}}) ->
+  io:format("~s(ergo):   skipped: ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
 tagged_event(TagString, {task_changed_graph, {task, TaskName}}) ->
-  io:format("~s(ergo): ~s: changed dependency graph - recomputing build... ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+  io:format("~s(ergo): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
 tagged_event(_TagString, {task_produced_output, {task, _TaskName}, Outlist}) ->
   %io:format("~s", [Outlist]);
   ok;

@@ -1,8 +1,8 @@
 -module(ergo_task).
 -behavior(gen_server).
 %% API
--export([current/0, taskname_from_token/1, start_link/3, task_name/1,
-         add_dep/4, add_req/4, add_prod/4, add_co/4, add_seq/4, skip/2, not_elidable/2]).
+-export([current/0, taskname_from_token/1, start_link/4, task_name/1,
+         add_dep/4, add_req/4, add_prod/4, add_co/4, add_seq/4, skip/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -11,9 +11,10 @@
 
 -define(ERGO_TASK_ENV, "ERGO_TASK_ID").
 
--record(state, {workspace, name, runspec, cmdport, output, graphitems, elidable}).
-start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir, Config) ->
-  gen_server:start_link(?VIA(WorkspaceDir, Taskname), ?MODULE, {RunSpec, WorkspaceDir, Config}, []).
+-record(state, {workspace, build_id, name, runspec, cmdport, output=[], graphitems=[], skipped=false}).
+
+start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir, BuildId, Config) ->
+  gen_server:start_link(?VIA(WorkspaceDir, Taskname), ?MODULE, {RunSpec, WorkspaceDir, BuildId, Config}, []).
 
 task_name(TaskServer) ->
   gen_server:call(TaskServer, task_name).
@@ -50,10 +51,6 @@ add_co(Workspace, Taskname, From, To) ->
 add_seq(Workspace, Taskname, From, To) ->
   gen_server:call(?VT(Workspace, Taskname), {add_seq, From, To}).
 
--spec(not_elidable(ergo:workspace_name(), ergo:taskname()) -> ok).
-not_elidable(Workspace, Taskname) ->
-  gen_server:call(?VT(Workspace, Taskname), {elidable}).
-
 -spec(skip(ergo:workspace_name(), ergo:taskname()) -> ok).
 skip(Workspace, Taskname) ->
   gen_server:call(?VT(Workspace, Taskname), {skip}).
@@ -61,12 +58,12 @@ skip(Workspace, Taskname) ->
 
 %%% gen_server callbacks
 
-init({TaskSpec, WorkspaceDir, Config}) ->
+init({TaskSpec, WorkspaceDir, BuildId, Config}) ->
   {TaskName, Command, Args} = TaskSpec,
   ergo_events:task_init(WorkspaceDir, {task, TaskName}),
   process_flag(trap_exit, true),
   CmdPort = launch_task(Command, TaskName, Args, WorkspaceDir, Config),
-  process_launch_result(CmdPort, WorkspaceDir, TaskName, TaskSpec).
+  process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec).
 
 handle_call(task_name, _From, State) ->
   {reply, State#state.name, State};
@@ -83,8 +80,6 @@ handle_call({add_seq, From, To}, _From, State) ->
 handle_call({skip}, _From, State) ->
   NewState = skipped(State),
   {reply, ok, NewState};
-handle_call({not_elidable}, _From, State) ->
-  {reply, ok, make_not_elidable(State)};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
@@ -94,8 +89,8 @@ handle_cast(_Msg, State) ->
 
 handle_info({CmdPort, {data, Data}}, State=#state{cmdport=CmdPort}) ->
   {noreply, received_data(State, Data)};
-handle_info({CmdPort, {exit_status, Status}}, State=#state{workspace=Workspace,cmdport=CmdPort,name=Name,output=Output,graphitems=GraphItems,elidable=Elides}) ->
-  exit_status(Workspace,Status,Name,Output,GraphItems,Elides),
+handle_info({_CmdPort, {exit_status, Status}}, State) ->
+  exit_status(Status, State),
   {noreply, State};
 handle_info({'EXIT', CmdPort, ExitReason}, State=#state{cmdport=CmdPort,name=Name}) ->
   exited(ExitReason,Name),
@@ -111,12 +106,12 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% Internal functions
 
-process_launch_result({'EXIT', Reason}, WorkspaceDir, TaskName, _TS) ->
+process_launch_result({'EXIT', Reason}, WorkspaceDir, _Bid, TaskName, _TS) ->
   ergo_events:task_failed(WorkspaceDir, {task, TaskName}, Reason, []),
   {stop, Reason};
-process_launch_result(CmdPort, WorkspaceDir, TaskName, TaskSpec) ->
+process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec) ->
   ergo_events:task_started(WorkspaceDir, {task, TaskName}),
-  {ok, #state{workspace=WorkspaceDir, name=TaskName, runspec=TaskSpec, cmdport=CmdPort, output=[], graphitems=[], elidable=true}}.
+  {ok, #state{workspace=WorkspaceDir, build_id=BuildId, name=TaskName, runspec=TaskSpec, cmdport=CmdPort}}.
 
 
 launch_task(Command, TaskName, Args, Dir, Config) ->
@@ -131,20 +126,13 @@ launch_task(Command, TaskName, Args, Dir, Config) ->
           ],
   catch open_port( {spawn_executable, Command}, PortConfig).
 
-
-task_running(Name) ->
-  lists:member(Name, ergo_tasks_soop:running_tasks()).
-
 add_item(State=#state{graphitems=GraphItems}, Item) ->
   State#state{graphitems=[Item | GraphItems]}.
-
-make_not_elidable(State) ->
-  State#state{elidable=false}.
 
 skipped(State=#state{workspace=Workspace,name=Name, cmdport=CmdPort}) ->
   ergo_events:task_skipped(Workspace, {task, Name}),
   port_close(CmdPort),
-  State#state{graphitems=[]}.
+  State#state{skipped=true}.
 
 task_env(Workspace, TaskName, Config) ->
   [
@@ -167,17 +155,19 @@ received_data(State=#state{workspace=Workspace,name=Name,output=Output}, Data) -
 exited(_Reason,_Name) ->
   ok.
 
-exit_status(Workspace,Status,Name, OutputList, Graph, Elides) ->
-  {ok, Changed} = ergo_graphs:task_batch(Workspace, Name, Graph, false),
-  record_and_report(Status, Changed, Workspace, Name, Elides, OutputList).
+exit_status(Status, State=#state{skipped=true}) ->
+  record_and_report(Status, {ok, no_change}, State#state{graphitems=[]});
+exit_status(Status, State=#state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph}) ->
+  Changed = ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, Status =:= 0),
+  record_and_report(Status, Changed, State).
 
-record_and_report(0, changed, Workspace, Name, Elides, _OutputList) ->
-  ergo_freshness:elidability(Workspace, Name, Elides),
+record_and_report(_Status, {err, Error}, #state{output=Output, name=Name, workspace=Workspace}) ->
+  ergo_events:task_failed(Workspace, {task, Name}, Error, {output,lists:flatten(lists:reverse(Output))});
+record_and_report(0, {ok, changed}, #state{workspace=Workspace, name=Name}) ->
   ergo_events:task_changed_graph(Workspace,{task, Name});
-record_and_report(0, no_change, Workspace, Name, Elides, _OutputList) ->
-  ergo_freshness:elidability(Workspace, Name, Elides),
+record_and_report(0, {ok, no_change }, #state{workspace=Workspace, name=Name}) ->
   ergo_events:task_completed(Workspace,{task, Name});
-record_and_report(_Status, changed, Workspace, Name, _Elides, _OutputList) ->
+record_and_report(_Status, {ok, changed}, #state{workspace=Workspace, name=Name}) ->
   ergo_events:task_changed_graph(Workspace,{task, Name});
-record_and_report(Status, no_change, Workspace, Name, _Elides, OutputList) ->
+record_and_report(Status, {ok, no_change}, #state{workspace=Workspace, name=Name, output=OutputList}) ->
   ergo_events:task_failed(Workspace, {task, Name}, {exit_status, Status}, {output,lists:flatten(lists:reverse(OutputList))}).

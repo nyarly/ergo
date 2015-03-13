@@ -25,7 +25,7 @@ start(Workspace, BuildId, Targets) ->
   WorkspaceName = ergo_workspace_registry:normalize_name(Workspace),
   Events = ?VIA(WorkspaceName),
   gen_event:add_handler(Events, ?ID(WorkspaceName, BuildId), {WorkspaceName, BuildId, Targets}),
-  gen_event:notify(Events, {build_start, WorkspaceName, BuildId}).
+  gen_event:notify(Events, {build_start, WorkspaceName, BuildId, Targets}).
 
 link_to(Workspace, Id, Pid) ->
   gen_event:call(?VIA(Workspace), ?ID(Workspace, Id), {exit_when_done, Pid}).
@@ -53,7 +53,7 @@ init({WorkspaceName, BuildId, Targets}) ->
     }
   }.
 
-handle_event({build_start, WorkspaceName, BuildId}, OldState=#state{build_id=BuildId,workspace_dir=WorkspaceName}) ->
+handle_event({build_start, WorkspaceName, BuildId, _}, OldState=#state{build_id=BuildId,workspace_dir=WorkspaceName}) ->
   State = load_config(OldState),
   start_tasks(State),
   {ok, State};
@@ -63,6 +63,8 @@ handle_event({task_failed, Task, Reason, _Output}, State) ->
 handle_event({task_changed_graph, Task}, State) ->
   {ok, task_changed_graph(Task, State)};
 handle_event({task_completed, Task}, State) ->
+  {ok, task_completed(Task, State)};
+handle_event({task_skipped, Task}, State) ->
   {ok, task_completed(Task, State)};
 handle_event({build_completed, BuildId, Success, _Message}, State=#state{build_id=BuildId}) ->
   build_completed(State, Success),
@@ -121,7 +123,7 @@ task_changed_graph({task, _Task}, State=#state{workspace_dir=Workspace, requeste
 
 task_completed({task, Task}, State = #state{run_counts= RunCounts, workspace_dir=WorkspaceDir, complete_tasks=PrevCompleteTasks}) ->
   CompleteTasks = [Task | PrevCompleteTasks],
-  ok = ergo_freshness:store(Task, WorkspaceDir, task_deps(WorkspaceDir, Task), task_products(WorkspaceDir, Task)),
+  ok = ergo_freshness:store(WorkspaceDir, Task),
   NewState = State#state{
     complete_tasks=CompleteTasks,
     run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
@@ -137,9 +139,9 @@ start_tasks(State=#state{build_spec=BuildSpec, complete_tasks=CompleteTasks}) ->
 
 start_eligible_tasks([], #state{workspace_dir=WorkspaceDir, build_id=BuildId}) ->
   ergo_events:build_completed(WorkspaceDir, BuildId, true, {});
-start_eligible_tasks(TaskList, #state{workspace_dir=WorkspaceDir, config=Config, run_counts=RunCounts}) ->
+start_eligible_tasks(TaskList, #state{workspace_dir=WorkspaceDir, build_id=BuildId, config=Config, run_counts=RunCounts}) ->
   lists:foreach(
-    fun(Task) -> start_task(WorkspaceDir, Task, Config, RunCounts) end,
+    fun(Task) -> start_task(WorkspaceDir, BuildId, Task, Config, RunCounts) end,
     TaskList).
 
 
@@ -153,6 +155,7 @@ run_count(Task, RunCounts) ->
 -record(task_config,
         {
          workspace,
+         build_id,
          task,
          fullexe,
          args,
@@ -163,8 +166,8 @@ run_count(Task, RunCounts) ->
          freshness
         }).
 
-start_task(Workspace, Task, Config, RunCounts) ->
-  start_task(#task_config{workspace=Workspace, task=Task, taskconfig=Config, runcount=run_count(Task,RunCounts)}).
+start_task(Workspace, BuildId, Task, Config, RunCounts) ->
+  start_task(#task_config{workspace=Workspace, build_id=BuildId, task=Task, taskconfig=Config, runcount=run_count(Task,RunCounts)}).
 
 start_task(#task_config{task=Task,workspace=Workspace,runcount=RC,runlimit=RL}) when RC >= RL ->
   Error={too_many_repetitions, Task, RC},
@@ -179,14 +182,12 @@ start_task(TC=#task_config{fullexe=undefined,workspace=Workspace,task=[TaskCmd|A
   start_task(TC#task_config{fullexe=task_executable(Workspace, TaskCmd),args=Args});
 start_task(TC=#task_config{freshness=undefined,fullexe=FullExe,workspace=Workspace,task=Task}) ->
   start_task(TC#task_config{
-               freshness=
-               ergo_freshness:check(Task, Workspace,
-                                    [FullExe | ergo_graphs:get_dependencies(Workspace, {task, Task})])});
+               freshness= ergo_freshness:check(Workspace, Task)});
 start_task(#task_config{workspace=Workspace, task=Task, freshness=hit}) ->
   ergo_events:task_skipped(Workspace, {task, Task}),
   ok;
-start_task(#task_config{workspace=Workspace, task=Task, fullexe=FullExe, args=Args, taskconfig=Config, freshness=miss}) ->
-  ergo_workspace:start_task(Workspace, {Task, FullExe, Args}, Config).
+start_task(#task_config{workspace=Workspace, build_id=BuildId, task=Task, fullexe=FullExe, args=Args, taskconfig=Config, freshness=miss}) ->
+  ergo_workspace:start_task(Workspace, BuildId, {Task, FullExe, Args}, Config).
 
 
 -spec(task_executable([file:name_all()], binary()) -> file:name_all()).
@@ -202,12 +203,6 @@ handle_task_executable(Error) ->
 
 build_completed(#state{waiters=Waiters,build_id=BuildId,requested_targets=Targets}, _Succeeded) ->
   [exit(Waiter,{build_completed,BuildId,Targets}) || Waiter <- Waiters].
-
-task_deps(Workspace, Task) ->
-  ergo_graphs:get_dependencies(Workspace, {task, Task}).
-
-task_products(Workspace, Task) ->
-  ergo_graphs:get_products(Workspace, {task, Task}).
 
 eligible_tasks(BuildSpec, CompleteTasks) ->
   lists:subtract(

@@ -10,7 +10,7 @@
 -module(ergo_events).
 
 -export([build_requested/2, build_completed/4, build_warning/3, requirement_noted/3, production_noted/3,
-         graph_changed/1, task_init/2, task_started/2, task_produced_output/3, task_failed/4, task_completed/2,
+         graph_changed/1, graph_contradiction/4, task_init/2, task_started/2, task_produced_output/3, task_failed/4, task_completed/2,
          task_changed_graph/2, task_skipped/2, tasks_joint/3, tasks_ordered/3]).
 
 %% @spec:	build_requested(targets::target_list()) -> ok.
@@ -48,6 +48,9 @@ production_noted(Workspace, Task, Product) ->
 -spec(graph_changed(ergo:workspace_name()) -> ok).
 graph_changed(Workspace) ->
   send_event(Workspace, {graph_changed}).
+
+graph_contradiction(Workspace, BuildId, Taskname, Contra) ->
+  send_event(Workspace, {graph_contradiction, BuildId, Taskname, Contra}).
 
 %% @spec:	task_started(task::ergo:task()) -> ok.
 %% @end

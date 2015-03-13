@@ -1,8 +1,8 @@
 -module(ergo_graphs).
 -behavior(gen_server).
 %% API
--export([start_link/1,
-         dependency/3,requires/3,produces/3,joint_tasks/3,ordered_tasks/3,get_products/2,get_dependencies/2,build_list/2,task_batch/4]).
+-export([start_link/1, get_products/2,get_dependencies/2,get_metadata/2, build_list/2,task_batch/5]).
+-export([statement_for_edge/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
@@ -16,54 +16,7 @@
 start_link(Workspace) ->
   gen_server:start_link({via, ergo_workspace_registry, {Workspace, graph, only}}, ?MODULE, [Workspace], []).
 
--type taskname() :: ergo:taskname().
--type productname() :: ergo:productname().
--type edge_id() :: integer().
--type normalized_product() :: string().
-
--record(task,    { name :: taskname(), command :: [binary()]}).
--record(product, { name :: productname() }).
--record(next_id, { kind :: atom(), value :: integer() }).
-
--record(seq, {
-          edge_id :: edge_id(), before :: taskname(), then :: taskname() }).
--record(cotask, {
-          edge_id :: edge_id(), task :: taskname(), also :: taskname() }).
--record(production, {
-          edge_id :: edge_id(), task :: taskname(), produces :: normalized_product() }).
--record(requirement, {
-          edge_id :: edge_id(), task :: taskname(), requires :: normalized_product() }).
--record(dep, {
-          edge_id :: edge_id(), from :: normalized_product(), to :: normalized_product() }).
--type edge_record() :: #seq{} | #cotask{} | #production{} | #dep{}.
-
--record(provenence, { edge_id :: edge_id(), task :: taskname() }).
--record(edge_label, { from_edges :: [edge_id()] }).
--record(gen_edge,   { from :: taskname(), to :: taskname(), implied_by :: [edge_id()] }).
-
-%% @spec:	requires(First::ergo:produced(), Second::ergo:produced()) -> ok.
-%% @end
--spec(dependency(ergo:workspace_name(), ergo:produced(), ergo:produced()) -> ok).
-dependency(Workspace, First, Second) ->
-  gen_server:call(?VIA(Workspace), {new_dep, First, Second}).
-
-%% @spec:	produces(Task::ergo:task(), Product::ergo:produced()) -> ok.
-%% @end
--spec(produces(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
-produces(Workspace, Task, Product) ->
-  gen_server:call(?VIA(Workspace), {new_prod, Task, Product}).
-
-%% @spec:	produces(Task::ergo:task(), Product::ergo:produced()) -> ok.
-%% @end
--spec(requires(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
-requires(Workspace, Task, Product) ->
-  gen_server:call(?VIA(Workspace), {new_req, Task, Product}).
-
-%% @spec:	joint_tasks(First::ergo:task(), Second::ergo:task()) -> ok.
-%% @end
--spec(joint_tasks(ergo:workspace_name(), ergo:task(), ergo:task()) -> ok).
-joint_tasks(Workspace, First, Second) ->
-  gen_server:call(?VIA(Workspace), {co_task, First, Second}).
+-include("ergo_graphs.hrl").
 
 %% @spec:	get_products(Task::ergo:task()) -> ok.
 %% @end
@@ -77,59 +30,58 @@ get_products(Workspace, Task) ->
 get_dependencies(Workspace, Task) ->
   gen_server:call(?VIA(Workspace), {dependencies, Task}).
 
-
-%% @spec:	ordered_tasks(First::ergo:task(), Second::ergo:task()) -> ok.
-%% @end
--spec(ordered_tasks(ergo:workspace_name(), ergo:task(), ergo:task()) -> ok).
-ordered_tasks(Workspace, First, Second) ->
-  gen_server:call(?VIA(Workspace), {task_seq, First, Second}).
-
-
 %% @spec:	build_list(Targets::[ergo:target()]) -> ok.
 %% @end
 -spec(build_list(ergo:workspace_name(), [ergo:target()]) -> ok).
 build_list(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {build_list, Targets}).
 
+
+%% @spec:	get_metadata(Target::ergo:target()) -> ok.
+%% @end
+-spec(get_metadata(ergo:workspace_name(), [ergo:target()]) -> ok).
+get_metadata(Workspace, Target) ->
+  gen_server:call(?VIA(Workspace), {get_metadata, Target}).
+
+
 %% @spec:	task_batch(Task::ergo:taskname(),Graph::ergo:graph_item()) -> ok.
 %% @doc:	Receives a batch of build-graph edges from a particular task.
 %% @end
 
--spec(task_batch(ergo:workspace_name(), ergo:taskname(),Graph::ergo:graph_item(), boolean()) -> {ok, changed|no_change}).
-task_batch(Workspace, Task, Graph, Succeeded) ->
-  gen_server:call(?VIA(Workspace), {task_batch, Task, Graph, Succeeded}).
+%% XXX change boolean "Succeeded" to atoms - Result: succees|failure
+-spec(task_batch(ergo:workspace_name(), ergo:build_id(), ergo:taskname(),Graph::ergo:graph_item(), boolean()) -> {ok, changed|no_change}).
+task_batch(Workspace, BuildId, Task, Graph, Succeeded) ->
+  gen_server:call(?VIA(Workspace), {task_batch, BuildId, Task, Graph, Succeeded}).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
--record(state, { workspace :: ergo:workspace_name(),
-                 workspace_root_re :: tuple(),
-                 edges :: ets:tid(),
-                 vertices :: ets:tid(),
-                 provenence :: ets:tid()}).
-
 init([Workspace]) ->
   {ok, build_state(Workspace) }.
 
-handle_call({new_dep, FromProduct, ToProduct}, _From, State) ->
-  {reply, new_dep(State, FromProduct, ToProduct), State};
-handle_call({new_req, Task, Product}, _From, State) ->
-  {reply, new_req(State, Task, Product), State};
-handle_call({new_prod, Task, Product}, _From, State) ->
-  {reply, new_prod(State, Task, Product), State};
-handle_call({co_task, WhenTask, AlsoTask}, _From, State) ->
-  {reply, co_task(State, WhenTask, AlsoTask), State};
+%handle_call({new_dep, FromProduct, ToProduct}, _From, State) ->
+%  {reply, new_dep(State, FromProduct, ToProduct), State};
+%handle_call({new_req, Task, Product}, _From, State) ->
+%  {reply, new_req(State, Task, Product), State};
+%handle_call({new_prod, Task, Product}, _From, State) ->
+%  {reply, new_prod(State, Task, Product), State};
+%handle_call({co_task, WhenTask, AlsoTask}, _From, State) ->
+%  {reply, co_task(State, WhenTask, AlsoTask), State};
+%handle_call({task_seq, First, Second}, _From, State) ->
+%  {reply, task_seq(State, First, Second), State};
+
 handle_call({products, Task}, _From, State) ->
   {reply, products(State, Task), State};
 handle_call({dependencies, Task}, _From, State) ->
   {reply, dependencies(State, Task), State};
-handle_call({task_seq, First, Second}, _From, State) ->
-  {reply, task_seq(State, First, Second), State};
 handle_call({build_list, Targets}, _From, State) ->
   {NewState, Result} = handle_build_list(State,Targets),
   {reply, Result, NewState};
-handle_call({task_batch, Task, Graph, Succeeded}, _From, State) ->
-  {reply, process_task_batch(Task, Graph, Succeeded, State), State};
+handle_call({task_batch, BuildId, Task, Graph, Succeeded}, _From, OldState) ->
+  State = update_batch_id(OldState),
+  {reply, maybe_notify_changed(process_task_batch(Task, Graph, Succeeded, State), BuildId, Task, State), State};
+handle_call({get_metadata, Thing}, _From, State) ->
+  {reply, handle_get_metadata(Thing, State), State};
 
 handle_call(_Request, _From, State) ->
   Reply = ok,
@@ -150,13 +102,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 
 
+%%% Persistence
+%%%
+
 build_state(WorkspaceRoot) ->
   build_state(WorkspaceRoot, protected).
 
 build_state(WorkspaceRoot, Access) ->
-  Workspace = filename:absname(WorkspaceRoot),
-  {ok,Regex} = re:compile(["^", filename:flatten(Workspace), "/"]),
-  load_from(#state{ workspace = Workspace, workspace_root_re = Regex }, Access).
+  State = construct_state(WorkspaceRoot),
+  load_from(State, Access).
 
 cleanup_state(#state{edges=Etab,vertices=Vtab,provenence=Ptab}) ->
   maybe_delete_table(Etab),
@@ -209,6 +163,7 @@ load_or_build(Filename, TableName, Type, Access) ->
 build_table(vertices, Type, Access) ->
   VTab = ets:new(vertices, [Type, Access, {keypos, 2}]),
   ets:insert(VTab, #next_id{kind=edge_ids, value=0}),
+  ets:insert(VTab, #next_id{kind=batch_ids, value=0}),
   VTab;
 build_table(Name, Type, Access) ->
   ets:new(Name, [Type, Access, {keypos, 2}]).
@@ -221,22 +176,64 @@ maybe_delete_table(Table) ->
     _Info -> ets:delete(Table)
   end.
 
--spec(process_task_batch(ergo:taskname(), [ergo:graph_item()], boolean(), #state{}) -> {ok, changed|no_change}).
-process_task_batch(Taskname, ReceivedItems, Succeeded, State) ->
-  maybe_notify_changed( record_task_batch(Taskname, ReceivedItems, Succeeded, State), State).
 
-maybe_notify_changed(true, State=#state{workspace=Workspace}) ->
+%%%%%%%%%%%%%%
+
+construct_state(WorkspaceRoot) ->
+  Workspace = filename:absname(WorkspaceRoot),
+  {ok,Regex} = re:compile(["^", filename:flatten(Workspace), "/"]),
+  #state{ workspace = Workspace, workspace_root_re = Regex }.
+
+update_batch_id(State=#state{vertices=VerTab}) ->
+  State#state{removed_id  = ets:update_counter(VerTab, batch_ids, {#next_id.value, 1}),
+              batch_id = ets:update_counter(VerTab, batch_ids, {#next_id.value, 1})}.
+
+
+-record(batch_status, {
+          changed,
+          build_id,
+          taskname,
+          workspace,
+          state,
+          contradictions
+         }).
+
+-record(contradictions, { self, whole }).
+
+maybe_notify_changed(Changed, BuildId, Taskname, State) ->
+  maybe_notify_changed(#batch_status{changed=Changed, build_id=BuildId, taskname=Taskname, state=State}).
+
+
+
+maybe_notify_changed(#batch_status{changed=false}) ->
+  {ok, no_change};
+
+maybe_notify_changed(Status=#batch_status{contradictions=undefined,taskname=Taskname,state=State}) ->
+  {Self,Whole} = ergo_graph_contradictions:resolve(Taskname, State),
+  maybe_notify_changed(Status#batch_status{contradictions=#contradictions{self=Self,whole=Whole}});
+maybe_notify_changed(#batch_status{
+                        contradictions=#contradictions{self=[],whole=Contras},
+                        build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
+  report_contradictions(BuildId, Workspace, Taskname, Contras),
   dump_to(State),
   ergo_events:graph_changed(Workspace),
   {ok, changed};
-maybe_notify_changed(false, _State) ->
-  {ok, no_change}.
+maybe_notify_changed(#batch_status{contradictions=#contradictions{self=List},
+                                   build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
+  report_contradictions(BuildId, Workspace, Taskname, List),
+  {err, {self_contradictions, List}}.
 
--spec(record_task_batch(ergo:taskname(), [ergo:graph_item()], boolean(), #state{}) -> true | false).
-record_task_batch(Taskname, ReceivedItems, false, State) ->
+
+report_contradictions(Workspace, BuildId, Taskname, Contras) ->
+  [ ergo_events:graph_contradiction(Workspace, BuildId, Taskname, Contra) || Contra <- Contras],
+  ok.
+
+-spec(process_task_batch(ergo:taskname(), [ergo:graph_item()], boolean(), #state{}) -> true | false).
+process_task_batch(Taskname, ReceivedItems, false, State) ->
   {CurrentItems, KnownItems} = comparable_items(State, ReceivedItems, Taskname),
+  tag_old_statements(KnownItems -- CurrentItems, State),
   add_statements(CurrentItems -- KnownItems, State, Taskname);
-record_task_batch(Taskname, ReceivedItems, true, State) ->
+process_task_batch(Taskname, ReceivedItems, true, State) ->
   {CurrentItems, KnownItems} = comparable_items(State, ReceivedItems, Taskname),
   add_statements(CurrentItems -- KnownItems, State, Taskname) or
     remove_statements(KnownItems -- CurrentItems, State, Taskname).
@@ -251,6 +248,17 @@ add_statements(NewItems, State, Taskname) ->
 
 remove_statements(MissingItems, State, Taskname) ->
   change_graph(MissingItems, State, Taskname, fun del_statement/3).
+
+tag_old_statements(OldItems, State=#state{edges=Edges, removed_id=RemovedId}) ->
+  {Keeps, All} = lists:foldl( fun(Item, {Keeps,All}) ->
+                             case add_statement(State, edge_for_statement(Item)) of
+                               {ok, Edge} -> {[Keeps], [Edge | All]};
+                               {exists, Edge} -> {[Edge | Keeps], [Edge | All]}
+                             end
+                         end, {[],[]}, OldItems),
+  [ ets:delete_object(Edges, Edge) || Edge <- All ],
+  ets:insert(Edges, [setelement(#seq.removed_id, Edge, RemovedId) || Edge <- Keeps]).
+
 
 change_graph(Items, State, Taskname, Fun) ->
   Acc = fun(Item, Acc) -> Fun(State, Taskname, Item) or Acc end,
@@ -267,7 +275,7 @@ add_statement(State=#state{provenence=Provs}, Taskname, Item) ->
   end.
 
 del_statement(State=#state{provenence=Provs,edges=Edges}, Taskname, Item) ->
-  {_, Edge} = add_statement(State, edge_for_statement(Item)),
+  {_, Edge} = add_statement(State, edge_for_statement(Item)), % XXX
   EdgeId = element(#seq.edge_id, Edge),
   ets:delete_object(Provs, #provenence{edge_id=EdgeId,task=Taskname}),
   case ets:lookup(Provs, EdgeId) of
@@ -292,32 +300,26 @@ items_for_task(#state{edges=Edges,provenence=Provs}, Taskname) ->
             ]))
   ].
 
--spec(edge_for_statement(ergo:graph_item()) -> edge_record()).
-edge_for_statement({seq, Before, Then}) ->
-  #seq{before=Before,then=Then};
-edge_for_statement({co, Task, Also}) ->
-  #cotask{task=Task,also=Also};
-edge_for_statement({prod, Task,Produces}) ->
-  #production{task=Task,produces=Produces};
-edge_for_statement({req, Task, Produces}) ->
-  #requirement{task=Task,requires=Produces};
-edge_for_statement({dep, From, To}) ->
-  #dep{from=From,to=To};
-edge_for_statement(Statement) ->
-  {err, {unrecognized_statement, Statement}}.
+-spec(edge_for_statement(ergo:graph_item())              -> edge_record()).
+edge_for_statement({seq, A, B})                          -> #seq{before=A, then=B};
+edge_for_statement({co, T, A})                           -> #cotask{task=T, also=A};
+edge_for_statement({prod, T,P})                          -> #production{task=T, produces=P};
+edge_for_statement({req, T, P})                          -> #requirement{task=T, requires=P};
+edge_for_statement({dep, A, B})                          -> #dep{from=A, to=B};
+edge_for_statement({file_meta, P, N, V})                 -> #file_meta{about=P, name=N, value=V};
+edge_for_statement({task_meta, T, N, V})                 -> #task_meta{about=T, name=N, value=V};
+edge_for_statement(Statement)                            -> {err, {unrecognized_statement, Statement}}.
 
 
--spec(statement_for_edge(edge_record()) -> ergo:graph_item()).
-statement_for_edge(#seq{before=First,then=Second}) ->
-  {seq, First, Second};
-statement_for_edge(#cotask{task=WhenTask,also=AlsoTask}) ->
-  {co, WhenTask, AlsoTask};
-statement_for_edge(#production{task=Task,produces=Product}) ->
-  {prod, Task, Product};
-statement_for_edge(#dep{from=From,to=To}) ->
-  {dep, From, To};
-statement_for_edge(Edge) ->
-  {err, {unrecognized_edge, Edge}}.
+-spec(statement_for_edge(edge_record())                  -> ergo:graph_item()).
+statement_for_edge(#seq{before=A,then=B})                -> {seq, A, B};
+statement_for_edge(#cotask{task=T,also=A})               -> {co, T, A};
+statement_for_edge(#production{task=T,produces=Product}) -> {prod, T, Product};
+statement_for_edge(#requirement{task=T, requires=P})     -> {req, T, P};
+statement_for_edge(#dep{from=From,to=To})                -> {dep, From, To};
+statement_for_edge(#task_meta{about=A,name=N, value=V})  -> {task_meta, A, N, V};
+statement_for_edge(#file_meta{about=A,name=N, value=V})  -> {file_meta, A, N, V};
+statement_for_edge(Edge)                                 -> {err, {unrecognized_edge, Edge}}.
 
 normalize_batch_statement(State, {dep, FromProd, ToProd}) ->
   {dep,
@@ -331,41 +333,19 @@ normalize_batch_statement(State, {prod, Task, Prod}) ->
   {prod,
    Task,
    normalize_product_name(State, Prod)};
+normalize_batch_statement(State, {file_meta, Prod, Name, Value}) ->
+  {file_meta,
+   normalize_product_name(State, Prod),
+   Name, Value};
 normalize_batch_statement(_State, Stmt={co, _, _}) ->
   Stmt;
 normalize_batch_statement(_State, Stmt={seq, _, _}) ->
   Stmt;
+normalize_batch_statement(_State, Stmt={task_meta, _, _, _}) ->
+  Stmt;
 normalize_batch_statement(_State, Statement) ->
   {err, {unrecognized_batch_statement, Statement}}.
 
-
-% Insert a dependency
--spec new_dep(#state{}, #product{}, #product{}) ->
-  {ok, edge_record()} | {exists,edge_record()}.
-new_dep(State, {product, ProductName}, {product, DependsOn}) ->
-  add_statement(State, #dep{from=ProductName,to=DependsOn}).
-
--spec new_req(#state{}, ergo:task(), #product{}) ->
-  {ok, edge_record()} | {exists,edge_record()}.
-new_req(State, {task, TaskName}, {product, ProductName}) ->
-  add_statement(State, #requirement{task=TaskName,requires=ProductName}).
-
--spec new_prod(#state{}, ergo:task(), #product{}) ->
-  {ok, edge_record()} | {exists,edge_record()}.
-new_prod(State, {task, TaskName}, {product, ProductName}) ->
-  add_statement(State, #production{task=TaskName,produces=ProductName}).
-
-% Insert a co-task edge
--spec co_task(#state{}, ergo:task(), ergo:task()) ->
-  {ok, edge_record()} | {exists,edge_record()}.
-co_task(State, {task, Task}, {task, WithOther}) ->
-  add_statement(State, #cotask{task=Task,also=WithOther}).
-
-% Insert a task sequencing edge
--spec task_seq(#state{}, ergo:task(), ergo:task()) ->
-  {ok, edge_record()} | {exists,edge_record()}.
-task_seq(State, {task, First}, {task, Second}) ->
-  add_statement(State, #seq{before=First, then=Second}).
 
 -spec add_statement(#state{}, edge_record()) ->
   {ok, edge_record()} | {exists,edge_record()}.
@@ -384,13 +364,29 @@ add_statement(State, Edge = #cotask{task=Task,also=Also}) ->
 add_statement(State, Edge = #requirement{task=Task,requires=Product}) ->
   add_task(State, Task), add_product(State, Product),
   Query = qlc:q([E|| E <- ets:table(State#state.edges),
-                         is_record(E, requirement), E#requirement.task =:= Task, E#requirement.requires =:= Product]),
+                         is_record(E, requirement), E#requirement.task =:= Task,
+                         E#requirement.requires =:= Product]),
+  insert_edge(State, Edge, Query);
+
+add_statement(State, Edge = #file_meta{about=Product,name=Name,value=Value}) ->
+  add_product(State, Product),
+  Query = qlc:q([E|| E <- ets:table(State#state.edges),
+                         is_record(E, file_meta), E#file_meta.about =:= Product,
+                         E#file_meta.name =:= Name, E#file_meta.value =:= Value]),
+  insert_edge(State, Edge, Query);
+
+add_statement(State, Edge = #task_meta{about=Task,name=Name,value=Value}) ->
+  add_task(State, Task),
+  Query = qlc:q([E|| E <- ets:table(State#state.edges),
+                         is_record(E, task_meta), E#task_meta.about =:= Task,
+                         E#task_meta.name =:= Name, E#task_meta.value =:= Value]),
   insert_edge(State, Edge, Query);
 
 add_statement(State, Edge = #production{task=Task,produces=Product}) ->
   add_task(State, Task), add_product(State, Product),
   Query = qlc:q([E|| E <- ets:table(State#state.edges),
-                         is_record(E, production), E#production.task =:= Task, E#production.produces =:= Product]),
+                         is_record(E, production), E#production.task =:= Task,
+                         E#production.produces =:= Product]),
   insert_edge(State, Edge, Query);
 
 add_statement(State, Edge = #dep{from=From,to=To}) ->
@@ -400,14 +396,19 @@ add_statement(State, Edge = #dep{from=From,to=To}) ->
   insert_edge(State, Edge, Query).
 
 
-insert_edge(State=#state{edges=EdgeTable}, Edge, Query) ->
+insert_edge(State=#state{edges=EdgeTable,batch_id=BatchId}, Edge, Query) ->
   case qlc:eval(Query) of
     [] ->
-      EdgeWithId = setelement(2, Edge, next_edge_id(State)),
-      true = ets:insert(EdgeTable, EdgeWithId),
-      {ok, EdgeWithId};
+      EdgeWithIds = set_edge_ids(Edge, BatchId, State),
+      true = ets:insert(EdgeTable, EdgeWithIds),
+      {ok, EdgeWithIds};
     FoundList -> {exists, hd(FoundList)}
   end.
+
+set_edge_ids(Edge, BatchId, State) ->
+  EdgeWithId = setelement(#seq.edge_id, Edge, next_edge_id(State)),
+  setelement(#seq.batch_id, EdgeWithId, BatchId).
+
 
 add_product(State, ProductName) ->
   add_vertex_if_missing(State, #product{name=ProductName}).
@@ -441,15 +442,18 @@ prod_deps(State, ProductName) ->
 task_deps(State, TaskName) ->
   qlc:eval(task_deps_query(State, TaskName)).
 
--spec(prod_dep_query(#state{}, productname()) -> qlc:query_handle()).
-prod_dep_query(#state{edges=Edges}, ProductName) ->
-  qlc:q([ Dep#dep.to || Dep <- ets:table(Edges), Dep#dep.from =:= ProductName ]).
+handle_get_metadata({task, Taskname}, State) ->
+  get_task_metadata(Taskname, State);
+handle_get_metadata({product, Product}, State) ->
+  get_product_metadata(normalize_product_name(State, Product), State).
 
--spec(task_deps_query(#state{}, taskname()) -> qlc:query_handle()).
-task_deps_query(#state{edges=Edges}, TaskName) ->
-  qlc:q([Depcy#dep.to || Pdctn <- ets:table(Edges), Depcy <- ets:table(Edges),
-                TaskName =:= Pdctn#production.task, Pdctn#production.produces =:= Depcy#dep.from ]).
+get_task_metadata(Taskname, #state{edges=Edges}) ->
+  qlc:eval(qlc:q([ {Md#task_meta.name, Md#task_meta.value} || Md <- ets:table(Edges),
+                           is_record(Md, task_meta), Md#task_meta.about =:= Taskname ])).
 
+get_product_metadata(Product, #state{edges=Edges}) ->
+  qlc:eval(qlc:q([ {Md#file_meta.name, Md#file_meta.value} || Md <- ets:table(Edges),
+                           is_record(Md, file_meta), Md#file_meta.about =:= Product ])).
 
 % Not currently used, but seems useful from a symmetry standpoint
 %-spec(task_products_query(#state{}, taskname()) -> qlc:query_handle()).
@@ -462,6 +466,7 @@ task_deps_query(#state{edges=Edges}, TaskName) ->
 handle_build_list(BaseState, Targets) ->
   State = load_from(BaseState),
   {State, run_build_list(State, targets_to_tasks(State, Targets))}.
+
 
 targets_to_tasks(State, Targets) ->
   TasksList = tasks_from_targets(State, Targets),
@@ -654,6 +659,23 @@ explicit_seq_query(#state{edges=Edges}) ->
 all_cotask_edges(State) ->
   qlc:eval(qlc:append([dep_implied_cotask_query(State), req_implied_cotask_query(State), explicit_cotask_query(State)])).
 
+-spec(prod_dep_query(#state{}, productname()) -> qlc:query_handle()).
+prod_dep_query(#state{edges=Edges}, ProductName) ->
+  qlc:q([ Dep#dep.to || Dep <- ets:table(Edges), Dep#dep.from =:= ProductName ]).
+
+-spec(task_deps_query(#state{}, taskname()) -> qlc:query_handle()).
+task_deps_query(State, TaskName) ->
+  qlc:append([explicit_task_req_query(State, TaskName), dep_implied_task_req_query(State, TaskName)]).
+
+explicit_task_req_query(#state{edges=Edges}, TaskName) ->
+  qlc:q([Req || #requirement{task=T,requires=Req} <- ets:table(Edges), T=:=TaskName]).
+
+dep_implied_task_req_query(#state{edges=Edges}, TaskName) ->
+  qlc:q([To || #production{task=PT, produces=P1} <- ets:table(Edges),
+               #dep{from=P2, to=To} <- ets:table(Edges),
+               TaskName =:= PT, P1 =:= P2 ]).
+
+
 dep_implied_cotask_query(State) ->
   qlc:q([#gen_edge{from=From,to=To,implied_by=ImpliedBy} ||
          #gen_edge{from=To,to=From,implied_by=ImpliedBy} <- task_to_task_dep_query(State)]).
@@ -665,6 +687,7 @@ req_implied_cotask_query(State) ->
 explicit_cotask_query(#state{edges=Edges}) ->
   qlc:q([#gen_edge{from=Also#cotask.task, to=Also#cotask.also, implied_by=[Also#cotask.edge_id]} ||
          Also <- ets:table(Edges), is_record(Also, cotask)]).
+
 
 
 % A Req + Pdctn edge imply a Seq and a reverse Cotask edge
@@ -682,10 +705,10 @@ explicit_cotask_query(#state{edges=Edges}) ->
 %  (Post) --- Pdctn --> (Prod)
 -spec(task_to_task_req_query(#state{}) -> qlc:query_handle()).
 task_to_task_req_query(#state{edges=Edges}) ->
-  qlc:q([#gen_edge{from=Pdctn#production.task, to=Req#requirement.task,
-                  implied_by=[Pdctn#production.edge_id,Req#requirement.edge_id]} ||
-         Pdctn <- ets:table(Edges), Req <- ets:table(Edges),
-         Pdctn#production.produces =:= Req#requirement.requires
+  qlc:q([#gen_edge{from=PT, to=RT, implied_by=[PI,RI]} ||
+         #production{task=PT, edge_id=PI, produces=PP} <- ets:table(Edges),
+         #requirement{task=RT, edge_id=RI, requires=RR} <- ets:table(Edges),
+         PP =:= RR
         ]).
 
 
@@ -699,10 +722,11 @@ task_to_task_req_query(#state{edges=Edges}) ->
 %    (  Post  ) --- PostPdctn ---> (Prod)
 -spec(task_to_task_dep_query(#state{}) -> qlc:query_handle()).
 task_to_task_dep_query(#state{edges=Edges}) ->
-  qlc:q([#gen_edge{from=PriorPdctn#production.task, to=PostPdctn#production.task,
-                  implied_by=[PriorPdctn#production.edge_id,Depcy#dep.edge_id,PostPdctn#production.edge_id]} ||
-         PriorPdctn <- ets:table(Edges), Depcy <- ets:table(Edges), PostPdctn <- ets:table(Edges),
-         PostPdctn#production.produces =:= Depcy#dep.from, PriorPdctn#production.produces =:= Depcy#dep.to
+  qlc:q([#gen_edge{from=BT, to=AT, implied_by=[BI,DI,AI]} ||
+         #production{task=BT, edge_id=BI, produces=BP} <- ets:table(Edges),
+         #dep{edge_id=DI, from=DF, to=DT} <- ets:table(Edges),
+         #production{task=AT, edge_id=AI, produces=AP} <- ets:table(Edges),
+         BP =:= DT, DF =:= AP
         ]).
 
 
@@ -730,7 +754,7 @@ task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
   case length(FoundTasks) of
     1 -> hd(FoundTasks);
     0 -> {err, {no_task_produces, ProductName}};
-    _ -> {err, {violated_invariant, single_producer}}
+    _ -> {err, {violated_invariant, single_producer, ProductName, FoundTasks}}
   end.
 
 
@@ -753,9 +777,15 @@ digraph_test_() ->
   OtherTaskName = [<<"test">>, <<"x">>],
   {foreach, %local, %digraphs are trapped in their process
     fun() ->
-        clobber_files("graph-test"), build_state("graph-test", public) end, %setup
-    fun(State) -> cleanup_state(State), clobber_files("graph-test") end, %teardown
+        dbg:tracer(),
+        clobber_files("graph-test"), update_batch_id(build_state("graph-test", public))
+    end, %setup
+    fun(State) ->
+        cleanup_state(State), clobber_files("graph-test"),
+        {ok,_} = dbg:p(all, clear)
+    end, %teardown
     [
+
      fun(State) ->
          ?_test(begin
                   {_NewState, List} = handle_build_list(State, [{task, [<<"new-task">>, <<"with-arg">>]}]),
@@ -764,45 +794,98 @@ digraph_test_() ->
      end,
      fun(State) ->
          ?_test(begin
-                  ?assertMatch({ok,{dep,1,"x.out","x.in"}},
-                               new_dep(State, {product, ProductName}, {product, DependsOn})),
-                  ?assertMatch({exists,{dep,1,"x.out","x.in"}},
-                               new_dep(State, {product, ProductName}, {product, DependsOn})),
+                  ?assertMatch(true,
+                               process_task_batch(TaskName, [ {file_meta, ProductName, fresh, digest} ], true, State)),
+                  ?assertMatch(false,
+                               process_task_batch(TaskName, [ {file_meta, ProductName, fresh, digest} ], true, State)),
                   ?assertEqual(1, length(ets:tab2list(State#state.edges)))
                 end)
      end,
      fun(State) ->
          ?_test(begin
-                  ?assertMatch({ok,{production,1,[<<"compile">>,<<"x">>],"x.out"}},
-                               new_prod(State, {task, TaskName}, {product, ProductName})),
-                  ?assertMatch({exists,{production,1,[<<"compile">>,<<"x">>],"x.out"}},
-                               new_prod(State, {task, TaskName}, {product, ProductName})),
+                  ?assertMatch(true,
+                               process_task_batch(TaskName, [ {task_meta, TaskName, fresh, digest} ], true, State)),
+                  ?assertMatch(false,
+                               process_task_batch(TaskName, [ {task_meta, TaskName, fresh, digest} ], true, State)),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges))),
+                  ?assertEqual([{fresh, digest}],
+                               handle_get_metadata({task, TaskName}, State))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  process_task_batch(TaskName, [ {req, TaskName, DependsOn} ], true, State),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges))),
+                  ?assertEqual([DependsOn], task_deps(State, TaskName))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch(true,
+                               process_task_batch(TaskName, [ {dep, ProductName, DependsOn} ], true, State)),
+                  ?assertMatch(false,
+                               process_task_batch(TaskName, [ {dep, ProductName, DependsOn} ], true, State)),
                   ?assertEqual(1, length(ets:tab2list(State#state.edges)))
                 end)
      end,
      fun(State) ->
          ?_test(begin
-                  ?assertMatch({ok, {cotask,1,[<<"compile">>,<<"x">>],[<<"test">>,<<"x">>]}},
-                               co_task(State, {task, TaskName}, {task, OtherTaskName})),
-                  ?assertMatch({exists, {cotask,1,[<<"compile">>,<<"x">>],[<<"test">>,<<"x">>]}},
-                               co_task(State, {task, TaskName}, {task, OtherTaskName})),
+                  ?assertMatch(true,
+                               process_task_batch(TaskName, [
+                                                             {prod, TaskName, ProductName},
+                                                             {file_meta, ProductName, fresh, digest},
+                                                             {task_meta, TaskName,    fresh, digest}
+
+                                                            ], true, State)),
+                  ?assertEqual({[],[]},
+                               ergo_graph_contradictions:resolve( TaskName, State )),
+                  NewState = update_batch_id(State),
+                  ?assertMatch(true,
+                               process_task_batch(OtherTaskName, [ {prod, OtherTaskName, ProductName},
+                                                                   {file_meta, ProductName, fresh, never},
+                                                                   {task_meta, TaskName,    fresh, never}
+
+                                                                 ], true, NewState)),
+                  ?assertMatch({_,[_,_,_]},
+                               ergo_graph_contradictions:resolve( OtherTaskName, NewState )),
+                  ?assertMatch([_,_,_], ets:tab2list(State#state.edges))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                  ?assertMatch(true,
+                               process_task_batch(TaskName, [ {prod, TaskName, ProductName} ], true, State)),
+                  ?assertMatch(false,
+                               process_task_batch(TaskName, [ {prod, TaskName, ProductName} ], true, State)),
                   ?assertEqual(1, length(ets:tab2list(State#state.edges)))
                 end)
      end,
      fun(State) ->
          ?_test(begin
-                  ?assertMatch({ok,{seq,1, [<<"compile">>,<<"x">>], [<<"test">>,<<"x">>]}},
-                               task_seq(State, {task, TaskName}, {task, OtherTaskName})),
-                  ?assertMatch({exists,{seq,1, [<<"compile">>,<<"x">>], [<<"test">>,<<"x">>]}},
-                               task_seq(State, {task, TaskName}, {task, OtherTaskName})),
+                   ?assertMatch(true,
+                                process_task_batch(TaskName, [ {co, TaskName, OtherTaskName} ], true, State)),
+                   ?assertMatch(false,
+                                process_task_batch(TaskName, [ {co, TaskName, OtherTaskName} ], true, State)),
+                  ?assertEqual(1, length(ets:tab2list(State#state.edges)))
+                end)
+     end,
+     fun(State) ->
+         ?_test(begin
+                   ?assertMatch(true,
+                                process_task_batch(TaskName, [ {seq, TaskName, OtherTaskName} ], true, State)),
+                   ?assertMatch(false,
+                                process_task_batch(TaskName, [ {seq, TaskName, OtherTaskName} ], true, State)),
                   ?assertEqual(1, length(ets:tab2list(State#state.edges)))
                 end)
      end,
      fun(State) ->
          ?_test( begin
-                   new_dep(State, {product, ProductName}, {product, DependsOn}),
-                   ?assertMatch({ok,{production,2,[<<"compile">>,<<"x">>],"x.out"}},
-                                new_prod(State, {task, TaskName}, {product, ProductName})),
+                   ?assertMatch(true,
+                                process_task_batch(
+                                  TaskName, [
+                                             {dep, ProductName, DependsOn},
+                                             {prod, TaskName, ProductName}
+                                            ], true, State)),
                    ?assertEqual(
                       [DependsOn],
                       task_deps(State, TaskName)
@@ -817,8 +900,13 @@ digraph_test_() ->
      end,
      fun(State) ->
          ?_test( begin
-                   new_req(State, {task, TaskName}, {product, DependsOn}),
-                   ?assertMatch({ok,#production{}},new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
+                   ?assertMatch(true,
+                                process_task_batch(
+                                  TaskName, [
+                                             { req, TaskName, DependsOn },
+                                             { prod, OtherTaskName, DependsOn }
+                                            ], true, State)),
+
                    {_NewState,List} = handle_build_list(dump_to(State), [{task, TaskName}]),
                    ?assertEqual(
                       [{OtherTaskName, []},{TaskName, [OtherTaskName]}],
@@ -828,7 +916,7 @@ digraph_test_() ->
      end,
      fun(State) ->
          ?_test( begin
-                   ?assertMatch({ok, changed},
+                   ?assertMatch(true,
                                 process_task_batch(TaskName,
                                                    [
                                                     {dep, ProductName, DependsOn},
@@ -836,15 +924,6 @@ digraph_test_() ->
                                                     {prod, TaskName, ProductName}
                                                    ], true, State)),
 
-                   {_NewState,List} = handle_build_list(dump_to(State), [{product, ProductName}]),
-                   ?assertEqual( [{OtherTaskName, []},{TaskName, [OtherTaskName]}], List)
-                 end)
-     end,
-     fun(State) ->
-         ?_test( begin
-                   new_dep(State, {product, ProductName}, {product, DependsOn}),
-                   ?assertMatch({ok, #production{}}, new_prod(State, {task, OtherTaskName}, {product, DependsOn})),
-                   ?assertMatch({ok, #production{}}, new_prod(State, {task, TaskName}, {product, ProductName})),
                    {_NewState,List} = handle_build_list(dump_to(State), [{product, ProductName}]),
                    ?assertEqual( [{OtherTaskName, []},{TaskName, [OtherTaskName]}], List)
                  end)

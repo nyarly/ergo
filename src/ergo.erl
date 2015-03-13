@@ -3,7 +3,7 @@
 
 -export([watch/0, watch/1, wait_on_build/1, wait_on_build/2, run_build/1, run_build/2, quiet_run_build/2,
          add_product/1, add_product/2, add_product/4, add_required/1, add_required/2, add_required/4, add_file_dep/2, add_cotask/2, add_cotask/4,
-         add_task_seq/2, add_task_seq/4, dont_elide/0, skip/0, setup/0]).
+         add_task_seq/2, add_task_seq/4, skip/0, setup/0]).
 
 -type taskname() :: [binary()]. % should change to _name
 -type productname() :: file:name_all(). % here too
@@ -73,14 +73,6 @@ add_cotask(Task, Also) ->
 add_task_seq(First, Second) ->
   add_task_seq(ergo_workspace:current(), ergo_task:current(), First, Second).
 
--spec(dont_elide() -> ok).
-dont_elide() ->
-  dont_elide(ergo_task:current()).
-
--spec(dont_elide(taskname()) -> ok).
-dont_elide(Task) ->
-  dont_elide(ergo_workspace:current(), Task).
-
 -spec(skip() -> ok).
 skip() ->
   skip(ergo_task:current()).
@@ -133,10 +125,5 @@ add_task_seq(Workspace, Reporter, First, Second) ->
 wait_on_build(Workspace, Id) ->
   ergo_build_waiter:wait_on(Workspace, Id).
 
--spec(dont_elide(workspace_name(), taskname()) -> command_response()).
-dont_elide(Workspace, Task) ->
-  ergo_task:not_elidable(Workspace, Task).
-
--spec(skip(workspace_name(), taskname()) -> command_response()).
 skip(Workspace, Task) ->
   ergo_task:skip(Workspace, Task).
