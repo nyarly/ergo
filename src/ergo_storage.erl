@@ -6,7 +6,7 @@
 %% @end
 -spec(start() -> ok).
 start() ->
-  mnesia:stop(), % already started somehow?
+  _ = mnesia:stop(), % already started somehow?
   set_storage_dir(application:get_env(ergo, mnesia_dir)),
   ok = create_schema(),
   ok = start_mnesia(),

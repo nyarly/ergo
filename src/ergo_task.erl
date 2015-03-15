@@ -60,7 +60,7 @@ skip(Workspace, Taskname) ->
 
 init({TaskSpec, WorkspaceDir, BuildId, Config}) ->
   {TaskName, Command, Args} = TaskSpec,
-  ergo_events:task_init(WorkspaceDir, {task, TaskName}),
+  ergo_events:task_init(WorkspaceDir, BuildId, {task, TaskName}),
   process_flag(trap_exit, true),
   CmdPort = launch_task(Command, TaskName, Args, WorkspaceDir, Config),
   process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec).
@@ -106,11 +106,11 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% Internal functions
 
-process_launch_result({'EXIT', Reason}, WorkspaceDir, _Bid, TaskName, _TS) ->
-  ergo_events:task_failed(WorkspaceDir, {task, TaskName}, Reason, []),
+process_launch_result({'EXIT', Reason}, WorkspaceDir, BuildId, TaskName, _TS) ->
+  ergo_events:task_failed(WorkspaceDir, BuildId, {task, TaskName}, Reason, []),
   {stop, Reason};
 process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec) ->
-  ergo_events:task_started(WorkspaceDir, {task, TaskName}),
+  ergo_events:task_started(WorkspaceDir, BuildId, {task, TaskName}),
   {ok, #state{workspace=WorkspaceDir, build_id=BuildId, name=TaskName, runspec=TaskSpec, cmdport=CmdPort}}.
 
 
@@ -129,8 +129,8 @@ launch_task(Command, TaskName, Args, Dir, Config) ->
 add_item(State=#state{graphitems=GraphItems}, Item) ->
   State#state{graphitems=[Item | GraphItems]}.
 
-skipped(State=#state{workspace=Workspace,name=Name, cmdport=CmdPort}) ->
-  ergo_events:task_skipped(Workspace, {task, Name}),
+skipped(State=#state{workspace=Workspace,build_id=BuildId, name=Name, cmdport=CmdPort}) ->
+  ergo_events:task_skipped(Workspace, BuildId, {task, Name}),
   port_close(CmdPort),
   State#state{skipped=true}.
 
@@ -149,8 +149,8 @@ task_path(Config) ->
      proplists:get_value(path,Config,[])],
     ":").
 
-received_data(State=#state{workspace=Workspace,name=Name,output=Output}, Data) ->
-  ergo_events:task_produced_output(Workspace,{task, Name}, Data),
+received_data(State=#state{workspace=Workspace,build_id=BuildId, name=Name,output=Output}, Data) ->
+  ergo_events:task_produced_output(Workspace, BuildId, {task, Name}, Data),
   State#state{output=[Data|Output]}.
 exited(_Reason,_Name) ->
   ok.
@@ -161,13 +161,13 @@ exit_status(Status, State=#state{workspace=Workspace, build_id=BuildId, name=Nam
   Changed = ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, Status =:= 0),
   record_and_report(Status, Changed, State).
 
-record_and_report(_Status, {err, Error}, #state{output=Output, name=Name, workspace=Workspace}) ->
-  ergo_events:task_failed(Workspace, {task, Name}, Error, {output,lists:flatten(lists:reverse(Output))});
-record_and_report(0, {ok, changed}, #state{workspace=Workspace, name=Name}) ->
-  ergo_events:task_changed_graph(Workspace,{task, Name});
-record_and_report(0, {ok, no_change }, #state{workspace=Workspace, name=Name}) ->
-  ergo_events:task_completed(Workspace,{task, Name});
-record_and_report(_Status, {ok, changed}, #state{workspace=Workspace, name=Name}) ->
-  ergo_events:task_changed_graph(Workspace,{task, Name});
-record_and_report(Status, {ok, no_change}, #state{workspace=Workspace, name=Name, output=OutputList}) ->
-  ergo_events:task_failed(Workspace, {task, Name}, {exit_status, Status}, {output,lists:flatten(lists:reverse(OutputList))}).
+record_and_report(_Status, {err, Error}, #state{output=Output, build_id=BuildId, name=Name, workspace=Workspace}) ->
+  ergo_events:task_failed(Workspace, BuildId, {task, Name}, Error, {output,lists:flatten(lists:reverse(Output))});
+record_and_report(0, {ok, changed}, #state{workspace=Workspace, build_id=BuildId, name=Name}) ->
+  ergo_events:task_changed_graph(Workspace, BuildId, {task, Name});
+record_and_report(0, {ok, no_change }, #state{workspace=Workspace, build_id=BuildId, name=Name}) ->
+  ergo_events:task_completed(Workspace, BuildId, {task, Name});
+record_and_report(_Status, {ok, changed}, #state{workspace=Workspace, build_id=BuildId, name=Name}) ->
+  ergo_events:task_changed_graph(Workspace, BuildId, {task, Name});
+record_and_report(Status, {ok, no_change}, #state{workspace=Workspace, build_id=BuildId, name=Name, output=OutputList}) ->
+  ergo_events:task_failed(Workspace, BuildId, {task, Name}, {exit_status, Status}, lists:flatten(lists:reverse(OutputList))).

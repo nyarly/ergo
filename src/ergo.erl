@@ -1,9 +1,13 @@
 -module(ergo).
--export_type([produced/0, task/0, taskname/0, productname/0, taskspec/0, build_spec/0, target/0, command_result/0, graph_item/0, workspace_name/0]).
+-export_type([produced/0, task/0, taskname/0, productname/0, taskspec/0,
+              build_spec/0, target/0, command_result/0, graph_item/0,
+              workspace_name/0, build_id/0]).
 
 -export([watch/0, watch/1, wait_on_build/1, wait_on_build/2, run_build/1, run_build/2, quiet_run_build/2,
-         add_product/1, add_product/2, add_product/4, add_required/1, add_required/2, add_required/4, add_file_dep/2, add_cotask/2, add_cotask/4,
-         add_task_seq/2, add_task_seq/4, skip/0, setup/0]).
+         add_product/1, add_product/2, add_product/4, add_required/1,
+         add_required/2, add_required/4, add_file_dep/2, add_file_dep/4,
+         add_cotask/2, add_cotask/4, add_task_seq/2, add_task_seq/4, skip/0,
+         setup/0]).
 
 -type taskname() :: [binary()]. % should change to _name
 -type productname() :: file:name_all(). % here too

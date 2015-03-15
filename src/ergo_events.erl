@@ -10,8 +10,8 @@
 -module(ergo_events).
 
 -export([build_requested/2, build_completed/4, build_warning/3, requirement_noted/3, production_noted/3,
-         graph_changed/1, graph_contradiction/4, task_init/2, task_started/2, task_produced_output/3, task_failed/4, task_completed/2,
-         task_changed_graph/2, task_skipped/2, tasks_joint/3, tasks_ordered/3]).
+         graph_changed/1, graph_contradiction/4, task_init/3, task_started/3, task_produced_output/4, task_failed/5, task_completed/3,
+         task_changed_graph/3, task_skipped/3, tasks_joint/3, tasks_ordered/3]).
 
 %% @spec:	build_requested(targets::target_list()) -> ok.
 %% @doc:	Emits a build_requested event
@@ -25,7 +25,7 @@ build_requested(Workspace, Targets) ->
 build_completed(Workspace, BuildId, Succeeded, Message) ->
   send_event(Workspace, {build_completed, BuildId, Succeeded, Message}).
 
--spec(build_warning(ergo:workspace_name(), integer(), boolean()) -> ok).
+-spec(build_warning(ergo:workspace_name(), ergo:build_id(), term()) -> ok).
 build_warning(Workspace, BuildId, Warning) ->
   send_event(Workspace, {build_warning, BuildId, Warning}).
 
@@ -54,46 +54,46 @@ graph_contradiction(Workspace, BuildId, Taskname, Contra) ->
 
 %% @spec:	task_started(task::ergo:task()) -> ok.
 %% @end
--spec(task_init(ergo:workspace_name(), ergo:task()) -> ok).
-task_init(Workspace, Task) ->
-  send_event(Workspace, {task_init, Task}).
+-spec(task_init(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+task_init(Workspace, BuildId, Task) ->
+  send_event(Workspace, {task_init, BuildId, Task}).
 
 %% @spec:	task_started(task::ergo:task()) -> ok.
 %% @end
--spec(task_started(ergo:workspace_name(), ergo:task()) -> ok).
-task_started(Workspace, Task) ->
-  send_event(Workspace, {task_started, Task}).
+-spec(task_started(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+task_started(Workspace, BuildId, Task) ->
+  send_event(Workspace, {task_started, BuildId, Task}).
 
 %% @spec:	task_produced_output(task::ergo:task()) -> ok.
 %% @end
--spec(task_produced_output(ergo:workspace_name(), ergo:task(), string()) -> ok).
-task_produced_output(Workspace, Task, Output) ->
-  send_event(Workspace, {task_produced_output, Task, Output}).
+-spec(task_produced_output(ergo:workspace_name(), ergo:build_id(), ergo:task(), string()) -> ok).
+task_produced_output(Workspace, BuildId, Task, Output) ->
+  send_event(Workspace, {task_produced_output, BuildId, Task, Output}).
 
 %% @spec:	task_failed(Task::ergo:task()) -> ok.
 %% @end
--spec(task_failed(ergo:workspace_name(), ergo:task(), term(), [string()]) -> ok).
-task_failed(Workspace, Task, Reason,Output) ->
-  send_event(Workspace, {task_failed, Task, Reason, Output}).
+-spec(task_failed(ergo:workspace_name(), ergo:build_id(), ergo:task(), term(), [string()]) -> ok).
+task_failed(Workspace, BuildId, Task, Reason,Output) ->
+  send_event(Workspace, {task_failed, BuildId, Task, Reason, Output}).
 
 %% @spec:	task_changed_graph(task::ergo:task()) -> ok.
 %% @end
--spec(task_changed_graph(ergo:workspace_name(), ergo:task()) -> ok).
-task_changed_graph(Workspace, Task) ->
-  send_event(Workspace, {task_changed_graph, Task}).
+-spec(task_changed_graph(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+task_changed_graph(Workspace, BuildId, Task) ->
+  send_event(Workspace, {task_changed_graph, BuildId, Task}).
 
 %% @spec:	task_skipped(task::ergo:task()) -> ok.
 %% @end
--spec(task_skipped(ergo:workspace_name(), ergo:task()) -> ok).
-task_skipped(Workspace, Task) ->
-  send_event(Workspace, {task_skipped, Task}).
+-spec(task_skipped(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+task_skipped(Workspace, BuildId, Task) ->
+  send_event(Workspace, {task_skipped, BuildId, Task}).
 
 %% @spec:	task_completed(task::ergo:task()) -> ok.
 %% @end
 
--spec(task_completed(ergo:workspace_name(), ergo:task()) -> ok).
-task_completed(Workspace, Task) ->
-  send_event(Workspace, {task_completed, Task}).
+-spec(task_completed(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+task_completed(Workspace, BuildId, Task) ->
+  send_event(Workspace, {task_completed, BuildId, Task}).
 
 %% @spec:	tasks_joint(first::ergo:task(), second::ergo:task()) -> ok.
 %% @end

@@ -10,7 +10,7 @@
 -type(roletype() :: supervisor | build | server | graph | events).
 -define(SERVER, ?MODULE).
 -record(state, {item_index::integer(), registry}).
--record(registry_key, {workspace::atom(),role::roletype(),name::term()}).
+-record(registry_key, {workspace::binary(),role::roletype(),name::term()}).
 -record(registration, {key::#registry_key{}|'_',pid::pid()|'_',monref::reference()|'_',index::binary()}).
 
 start_link() ->
@@ -58,7 +58,7 @@ handle_call({process_id, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, process_id(RegKey, RegTab), State};
 handle_call({name_for_id, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, name_for_id(RegKey, RegTab), State};
-handle_call(Request, _From, State) ->
+handle_call(_, _, State) ->
   {reply, unknown_request, State}.
 
 handle_cast(_Msg, State) ->
@@ -137,6 +137,6 @@ name_for_id(ProcId, RegTab) ->
 
 send(RegKey, Message, RegTab) ->
   case lookup(RegKey, RegTab) of
-    unknown -> {bagarg, {RegKey, Message}};
+    undefined -> {bagarg, {RegKey, Message}};
     Pid -> Pid ! Message
   end.

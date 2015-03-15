@@ -111,5 +111,5 @@ maybe_filedep(false,false,_,_,_,_) ->
 
 usage_string(ProgramName, OptSpecList, CmdLineTail, OptionsTail) ->
   io_lib:format("~ts~n~n~ts~n",
-                [ unicode:characters_to_list(getopts:usage_cmd_line(ProgramName, OptSpecList, CmdLineTail)),
-                  unicode:characters_to_list(getopts:usage_options(OptSpecList, OptionsTail))]).
+                [ unicode:characters_to_list(getopt:usage_cmd_line(ProgramName, OptSpecList, CmdLineTail)),
+                  unicode:characters_to_list(getopt:usage_options(OptSpecList, OptionsTail))]).

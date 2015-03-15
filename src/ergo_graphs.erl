@@ -39,7 +39,7 @@ build_list(Workspace, Targets) ->
 
 %% @spec:	get_metadata(Target::ergo:target()) -> ok.
 %% @end
--spec(get_metadata(ergo:workspace_name(), [ergo:target()]) -> ok).
+-spec(get_metadata(ergo:workspace_name(), ergo:target()) -> ok).
 get_metadata(Workspace, Target) ->
   gen_server:call(?VIA(Workspace), {get_metadata, Target}).
 
@@ -347,8 +347,7 @@ normalize_batch_statement(_State, Statement) ->
   {err, {unrecognized_batch_statement, Statement}}.
 
 
--spec add_statement(#state{}, edge_record()) ->
-  {ok, edge_record()} | {exists,edge_record()}.
+-spec add_statement(#state{}, edge_record()) -> {ok, edge_record()} | {exists,edge_record()}.
 add_statement(State, Edge = #seq{before=Before,then=Then}) ->
   add_task(State, Before), add_task(State, Then),
   Query = qlc:q([E|| E <- ets:table(State#state.edges),
@@ -462,7 +461,7 @@ get_product_metadata(Product, #state{edges=Edges}) ->
 %                    Product#product.name =:= Production#production.produces,
 %                    Production#production.task =:= TaskName ]).
 
--spec(handle_build_list(#state{}, [ergo:target()]) -> ergo:build_spec()).
+-spec(handle_build_list(#state{}, [ergo:target()]) -> {#state{}, ergo:build_spec()}).
 handle_build_list(BaseState, Targets) ->
   State = load_from(BaseState),
   {State, run_build_list(State, targets_to_tasks(State, Targets))}.
@@ -730,7 +729,7 @@ task_to_task_dep_query(#state{edges=Edges}) ->
         ]).
 
 
--spec(tasks_from_targets(#state{}, [ergo:target()]) -> [ergo:task()]).
+-spec(tasks_from_targets(#state{}, [ergo:target()]) -> [ergo:task()|{error,term()}]).
 tasks_from_targets(State, Targets) ->
   lists:map(
     fun(Target) ->

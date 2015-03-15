@@ -18,8 +18,14 @@ suite() ->
 init_per_suite(Config) ->
   dbg:tracer(),
   %{ok, _} = dbg:tpl(ergo_task,record_and_report, []),
-  %{ok, _} = dbg:tpl(ergo_build,handle_event, []),
-  {ok, _} = dbg:tpl(ergo_freshness,digest_list, [{'_',[],[{return_trace}]}]),
+  %{ok, _} = dbg:tpl(ergo_build,handle_event, [{['$1','$2'], [{'=/=', {'element', 1, '$1'}, task_produced_output}], []}]),
+  {ok, _} = dbg:tpl(ergo_build,start_tasks, []),
+%  {ok, _} = dbg:tpl(ergo_build,start_task, 5, []),
+%  {ok, _} = dbg:tpl(ergo_build,task_changed_graph, []),
+%  {ok, _} = dbg:tpl(ergo_build,task_completed, []),
+  %j
+  %{ok, _} = dbg:tpl(ergo_freshness,[]),
+  %{ok, _} = dbg:tpl(ergo_freshness,digest_list, [{'_',[],[{return_trace}]}]),
   dbg:p(all,c),
   DataDir = proplists:get_value(data_dir, Config),
   PrivDir = proplists:get_value(priv_dir, Config),

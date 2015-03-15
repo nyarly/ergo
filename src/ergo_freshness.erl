@@ -11,10 +11,7 @@
 -define(CHUNK_SIZE, 4096).
 
 file_digest(Root, Path) ->
-  #digest{
-     filename=Path,
-     digest=digest_of_file(file:path_open([Root], Path, [read, raw, binary]))
-    }.
+  digest_of_file(file:path_open([Root], Path, [read, raw, binary])).
 
 store(Root, Task) ->
   store(Root, Task, task_deps(Root, Task), task_products(Root, Task)).
