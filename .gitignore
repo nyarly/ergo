@@ -7,3 +7,4 @@ deps/
 last_dialyze
 .vim-role
 *.beam
+_rel
