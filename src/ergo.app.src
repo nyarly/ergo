@@ -1,5 +1,5 @@
 {application, ergo, [
-	{description, ""},
+	{description, "A parallel build runner."},
 	{vsn, "0.1.0"},
 	{modules, []},
 	{registered, []},
