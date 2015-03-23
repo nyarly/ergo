@@ -8,7 +8,7 @@
 %%% a copy of the New BSD license with this software. If not, it can be
 %%% retrieved from: http://www.opensource.org/licenses/bsd-license.php
 %%%-------------------------------------------------------------------
--module(getopt).
+-module(ergo_getopt).
 -author('juanjo@comellas.org').
 
 -export([parse/2, check/2, parse_and_check/2, format_error/2,

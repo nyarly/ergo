@@ -6,8 +6,8 @@
 	{applications, [
 		kernel,
 		stdlib,
-                crypto,
-                mnesia
+                crypto
+                %removed mnesia - ergo requires that it be loaded and not running
 	]},
 	{mod, {ergo_app, []}},
 	{env, [

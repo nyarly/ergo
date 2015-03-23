@@ -8,3 +8,5 @@ last_dialyze
 .vim-role
 *.beam
 _rel
+erl_crash.dump
+releases/

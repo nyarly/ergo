@@ -20,7 +20,7 @@ files(Workspace, ReporterId, CmdName, Ifs, CommandLine) ->
                  end).
 
 command_parse(Ifs, CmdName, CommandLine, OptSpec, UsageExtra, Fun) ->
-  case getopt:parse([{help, $h, "help", boolean, "Print this help text"}| OptSpec], string:tokens(CommandLine, Ifs)) of
+  case ergo_getopt:parse([{help, $h, "help", boolean, "Print this help text"}| OptSpec], string:tokens(CommandLine, Ifs)) of
     {ok, {Options, Args}} ->
       case proplists:get_bool(help, Options) of
         true ->
@@ -76,26 +76,26 @@ run_files(usage) ->
     {"SECOND", "Requiring file"} ]
   }.
 run_files(Workspace, ReporterId, [], [FirstFile, SecondFile]) ->
-  ergo:add_file_dep(Workspace, ReporterId, FirstFile, SecondFile).
+  ergo_api:add_file_dep(Workspace, ReporterId, FirstFile, SecondFile).
 
 %          preceed,follow
 maybe_deps(true,true,_,_,_,_) ->
   {error, contradictory_preceed_follow};
 maybe_deps(true,_,Workspace,Reporter,First,Second) ->
-  ergo:add_task_seq(Workspace,Reporter,First,Second);
+  ergo_api:add_task_seq(Workspace,Reporter,First,Second);
 maybe_deps(_,true,Workspace,Reporter,First,Second) ->
-  ergo:add_task_seq(Workspace,Reporter,Second,First);
+  ergo_api:add_task_seq(Workspace,Reporter,Second,First);
 maybe_deps(_,_,_,_,_,_) ->
   ok.
 
 %             also,when
 maybe_cotasks(true,true,Workspace,Reporter,First,Second) ->
-  ergo:add_cotask(Workspace,Reporter,First,Second),
-  ergo:add_cotask(Workspace,Reporter,Second,First);
+  ergo_api:add_cotask(Workspace,Reporter,First,Second),
+  ergo_api:add_cotask(Workspace,Reporter,Second,First);
 maybe_cotasks(false,true,Workspace,Reporter,First,Second) ->
-  ergo:add_cotask(Workspace,Reporter,Second,First);
+  ergo_api:add_cotask(Workspace,Reporter,Second,First);
 maybe_cotasks(true,false,Workspace,Reporter,First,Second) ->
-  ergo:add_cotask(Workspace,Reporter,First,Second);
+  ergo_api:add_cotask(Workspace,Reporter,First,Second);
 maybe_cotasks(_,_,_,_,_,_) ->
   ok.
 
@@ -103,13 +103,13 @@ maybe_cotasks(_,_,_,_,_,_) ->
 maybe_filedep(true,true,_,_,_,_) ->
   {error, contradictory_require_produce};
 maybe_filedep(true,false,Workspace,Reporter,First,Second) ->
-  ergo:add_required(Workspace,Reporter,First,Second);
+  ergo_api:add_required(Workspace,Reporter,First,Second);
 maybe_filedep(false,true,Workspace,Reporter,First,Second) ->
-  ergo:add_product(Workspace,Reporter,First,Second);
+  ergo_api:add_product(Workspace,Reporter,First,Second);
 maybe_filedep(false,false,_,_,_,_) ->
   ok.
 
 usage_string(ProgramName, OptSpecList, CmdLineTail, OptionsTail) ->
   io_lib:format("~ts~n~n~ts~n",
-                [ unicode:characters_to_list(getopt:usage_cmd_line(ProgramName, OptSpecList, CmdLineTail)),
-                  unicode:characters_to_list(getopt:usage_options(OptSpecList, OptionsTail))]).
+                [ unicode:characters_to_list(ergo_getopt:usage_cmd_line(ProgramName, OptSpecList, CmdLineTail)),
+                  unicode:characters_to_list(ergo_getopt:usage_options(OptSpecList, OptionsTail))]).

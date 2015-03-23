@@ -3,7 +3,7 @@
 
 -include_lib("kernel/include/file.hrl").
 %% API
--export([start_link/1, start_task/4, start_build/2, current/0, setup/0]).
+-export([start_link/1, start_task/4, start_build/2, find_dir/1, setup/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
@@ -26,23 +26,22 @@ start_task(Workspace, BuildId, RunSpec, Config) ->
 start_build(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {start_build, {Targets}}).
 
--spec(current() -> ergo:workspace_name() | no_workspace | {error, term()}).
-current() ->
-  case file:get_cwd() of
-    {ok, Pwd} ->
-      case find_dir(Pwd) of
-        none -> no_workspace;
-        Path -> Path
-      end;
-    Error -> Error
+-spec(find_dir(filename:all()) -> ergo:workspace_name() | no_workspace | {error, term()}).
+find_dir(Path="/") ->
+  case ergo_dir(Path) of
+    no -> no_workspace;
+    _ -> Path
+  end;
+find_dir(Path) ->
+  case ergo_dir(Path) of
+    no -> find_dir(filename:dirname(Path));
+    _ -> Path
   end.
 
--spec(setup() -> ok | {error, term()}).
-setup() ->
-  case file:get_cwd() of
-    {ok, Pwd} -> setup_ergo_in(Pwd);
-    Error -> {error, {cant_get_pwd, Error}}
-  end.
+
+-spec(setup(filename:all()) -> ok | {error, term()}).
+setup(Pwd) ->
+  setup_ergo_in(Pwd).
 
 
 %% @spec:	start_build() -> ok.
@@ -51,17 +50,6 @@ setup() ->
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
-
-find_dir(Path="/") ->
-  case ergo_dir(Path) of
-    no -> none;
-    _ -> Path
-  end;
-find_dir(Path) ->
-  case ergo_dir(Path) of
-    no -> find_dir(filename:dirname(Path));
-    _ -> Path
-  end.
 
 ergo_dir(Path) ->
   case ErgoDir=file:read_file_info(filename:join(Path, ?ERGO_DIR)) of
@@ -120,12 +108,12 @@ make_ergo_dir(ErgoDir) ->
 
 ensure_project_id(Dir) ->
   PridFile = filename:join(Dir, "project_id"),
-  PridBytes = uuid:to_string(uuid:v4()),
+  PridBytes = ergo_uuid:v4_string(),
 
   case file:write_file(PridFile, PridBytes, [write, exclusive]) of
     {error, eexist} -> ok;
     ok -> ok
   end.
 
-ensure_env_config(Dir) ->
+ensure_env_config(_Dir) ->
   ok.
