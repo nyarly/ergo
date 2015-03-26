@@ -19,7 +19,7 @@ init_per_suite(Config) ->
   dbg:tracer(),
   %{ok, _} = dbg:tpl(ergo_task,record_and_report, []),
   %{ok, _} = dbg:tpl(ergo_build,handle_event, [{['$1','$2'], [{'=/=', {'element', 1, '$1'}, task_produced_output}], []}]),
-  {ok, _} = dbg:tpl(ergo_build,start_tasks, []),
+  %{ok, _} = dbg:tpl(ergo_build,start_tasks, []),
 %  {ok, _} = dbg:tpl(ergo_build,start_task, 5, []),
 %  {ok, _} = dbg:tpl(ergo_build,task_changed_graph, []),
 %  {ok, _} = dbg:tpl(ergo_build,task_completed, []),
@@ -31,25 +31,37 @@ init_per_suite(Config) ->
   PrivDir = proplists:get_value(priv_dir, Config),
   copy_dir(DataDir, PrivDir),
   Config.
+
 end_per_suite(_Config) ->
+  dbg:ctp(),
+  dbg:p(all,clear),
   ok.
+
 init_per_group(_GroupName, Config) ->
   Config.
+
 end_per_group(_GroupName, _Config) ->
   ok.
+
 init_per_testcase(TestCase, Config) ->
   ct:pal("BEGIN: ~p", [TestCase]),
-  application:start(crypto),
-  application:start(mnesia),
-  application:start(ergo),
-  Config.
+  WS = [proplists:get_value(priv_dir, Config), TestCase, "project"],
+  CfgDir = [proplists:get_value(priv_dir, Config), TestCase, "config"],
+  ResDir = [proplists:get_value(priv_dir, Config), TestCase, "result"],
+  ok = application:set_env(ergo, config_dir, CfgDir, [{persistent, true}]),
+  ok = application:start(crypto),
+  ok = application:start(ergo),
+  [{result, ResDir}, {config, CfgDir}, {workspace, WS} | Config].
+
 end_per_testcase(_TestCase, _Config) ->
   application:stop(ergo),
   application:stop(mnesia),
   application:stop(crypto),
   ok.
+
 groups() ->
   [].
+
 all() ->
   [root_task, two_tasks].
 

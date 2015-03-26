@@ -3,9 +3,12 @@
               build_spec/0, target/0, command_result/0, graph_item/0,
               workspace_name/0, build_id/0]).
 
--export([watch/1,
-         run_build/2,
-         setup/1]).
+-export([
+         setup/1,
+         find_workspace/1,
+         watch/1,
+         run_build/2
+         ]).
 
 -type taskname() :: [binary()]. % should change to _name
 -type productname() :: file:name_all(). % here too
@@ -34,15 +37,18 @@
 setup(Dir) ->
   ergo_workspace:setup(Dir).
 
+find_workspace(Dir) ->
+  ergo_workspace:find_dir(Dir).
+
 -spec(watch(workspace_name()) -> command_response()).
 watch(Workspace) ->
+  {ok, _Pid} = ergo_sup:start_workspace(Workspace),
   {ergo_workspace_watcher, Ref} = ergo_workspace_watcher:ensure_added(Workspace),
   {ok, Ref}.
 
 -spec(run_build(workspace_name(), [target()]) -> command_response()).
 run_build(Workspace, Targets) ->
   {ok, _Pid} = ergo_sup:start_workspace(Workspace),
-  watch(Workspace),
   ergo_workspace:start_build(Workspace, Targets).
 
 %%% Basic functions

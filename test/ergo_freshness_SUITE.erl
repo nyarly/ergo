@@ -19,14 +19,24 @@ init_per_suite(Config) ->
     end,
     [?PRODUCT, ?DEP, ?TASKFILE]
   ),
-  application:set_env(mnesia, dir, Priv),
   application:start(crypto),
-  application:start(mnesia),
+  %application:start(mnesia),
+
+  dbg:tracer(),
+  {ok,_}=dbg:tpl(ergo_app,[{'_', [], [{return_trace}]}]),
+  {ok,_}=dbg:tpl(net_kernel, start, []),
+  {ok,_}=dbg:p(all, call),
+
+  application:set_env(ergo, config_dir, filename:join([Data, "config"]), [{persistent, true}]),
   application:start(ergo),
   ergo_sup:start_workspace(Priv),
   Config.
 
 end_per_suite(_Config) ->
+  application:stop(ergo),
+  application:stop(mnesia),
+  application:stop(crypto),
+  dbg:ctp(),
   dbg:p(all, clear),
   ok.
 

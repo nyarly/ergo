@@ -10,3 +10,4 @@ last_dialyze
 _rel
 erl_crash.dump
 releases/
+test/ergo_freshness_SUITE_data/config/ergo_mnesia/
