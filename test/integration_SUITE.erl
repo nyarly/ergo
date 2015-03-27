@@ -27,6 +27,7 @@ init_per_suite(Config) ->
   %{ok, _} = dbg:tpl(ergo_freshness,[]),
   %{ok, _} = dbg:tpl(ergo_freshness,digest_list, [{'_',[],[{return_trace}]}]),
   dbg:p(all,c),
+  process_flag(trap_exit,true),
   DataDir = proplists:get_value(data_dir, Config),
   PrivDir = proplists:get_value(priv_dir, Config),
   copy_dir(DataDir, PrivDir),
@@ -45,18 +46,20 @@ end_per_group(_GroupName, _Config) ->
 
 init_per_testcase(TestCase, Config) ->
   ct:pal("BEGIN: ~p", [TestCase]),
+  process_flag(trap_exit,true),
   WS = [proplists:get_value(priv_dir, Config), TestCase, "project"],
   CfgDir = [proplists:get_value(priv_dir, Config), TestCase, "config"],
   ResDir = [proplists:get_value(priv_dir, Config), TestCase, "result"],
   ok = application:set_env(ergo, config_dir, CfgDir, [{persistent, true}]),
-  ok = application:start(crypto),
-  ok = application:start(ergo),
+  application:start(crypto),
+  application:start(ergo),
   [{result, ResDir}, {config, CfgDir}, {workspace, WS} | Config].
 
 end_per_testcase(_TestCase, _Config) ->
   application:stop(ergo),
   application:stop(mnesia),
   application:stop(crypto),
+  flush_messages(),
   ok.
 
 groups() ->
@@ -69,6 +72,13 @@ all() ->
 %% HELPERS
 %%
 %%
+
+flush_messages() ->
+  receive
+    Msg -> ct:pal("Flush message: ~p", [Msg])
+  after
+    0 -> ct:pal("No more messages",[])
+  end.
 
 copy_test_project(Config, TestSub) ->
   copy_test_project(Config, TestSub, "project", "config", "result").
@@ -157,8 +167,9 @@ root_task() ->
   [].
 root_task(Config) ->
   Workspace = [proplists:get_value(priv_dir, Config), "root_task/project"],
+  ergo:watch(Workspace),
   Id = ergo:run_build(Workspace, [{task, [<<"tasks/root">>]}]),
-  ergo:wait_on_build(Workspace, Id),
+  ergo_api:wait_on_build(Workspace, Id),
   match_dir([proplists:get_value(priv_dir, Config), "root_task/result"], Workspace),
   ok.
 
@@ -166,11 +177,12 @@ two_tasks() ->
   [].
 two_tasks(Config) ->
   Workspace = [proplists:get_value(priv_dir, Config), "two_tasks/project"],
+  ergo:watch(Workspace),
   Id = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
-  ergo:wait_on_build(Workspace, Id),
+  ergo_api:wait_on_build(Workspace, Id),
   match_dir([proplists:get_value(priv_dir, Config), "two_tasks/result"], Workspace),
   Id2 = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
-  ergo:wait_on_build(Workspace, Id2),
+  ergo_api:wait_on_build(Workspace, Id2),
   ok.
 
 %%% Needed test cases:

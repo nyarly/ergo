@@ -85,7 +85,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 state_from_args([Tag]) ->
-  {ok, #state{tag=Tag}}.
+  #state{tag=Tag}.
 
 
 
@@ -95,42 +95,53 @@ format_event(State=#state{tag=Tag},  Event) ->
   tagged_event(["[",Tag,"] "], Event, State).
 
 
+tagged_event(_, Event, #state{graph_changed=silent})        when element(1, Event) =:= graph_changed        -> ok;
+tagged_event(_, Event, #state{build_start=silent})          when element(1, Event) =:= build_start          -> ok;
+tagged_event(_, Event, #state{build_completed=silent})      when element(1, Event) =:= build_completed      -> ok;
+tagged_event(_, Event, #state{task_init=silent})            when element(1, Event) =:= task_init            -> ok;
+tagged_event(_, Event, #state{task_started=silent})         when element(1, Event) =:= task_started         -> ok;
+tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
+tagged_event(_, Event, #state{task_skipped=silent})         when element(1, Event) =:= task_skipped         -> ok;
+tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
+tagged_event(_, Event, #state{task_changed_graph=silent})   when element(1, Event) =:= task_changed_graph   -> ok;
+tagged_event(_, Event, #state{task_produced_output=silent}) when element(1, Event) =:= task_produced_output -> ok;
+tagged_event(_, Event, #state{task_failed=silent})          when element(1, Event) =:= task_failed          -> ok;
 
 tagged_event(TagString, {graph_changed}, #state{graph_changed=report}) ->
   io:format("~n~s(ergo): graph changed", [TagString]);
 
 tagged_event(TagString, {build_start, Workspace, BuildId, Targets}, #state{build_start=report}) ->
-  io:format("~n~s(ergo): build (id ~p) targets: ~p starting in:~n   ~s ~n", [TagString, BuildId, Targets, Workspace]);
+  io:format("~n~s(ergo): build (ergo:~p) targets: ~p starting in:~n   ~s ~n", [TagString, BuildId, Targets, Workspace]);
 
 tagged_event(TagString, {build_completed, BuildId, true, _Msg}, #state{build_completed=report}) ->
-  io:format("~s(ergo): build id ~p completed successfully.~n", [TagString, BuildId]);
+  io:format("~s(ergo:~p): completed successfully.~n", [TagString, BuildId]);
 
 tagged_event(TagString, {build_completed, BuildId, false, Msg}, #state{build_completed=report}) ->
-  io:format("~s(ergo): build id ~p exited with a failure.~n  More info: ~p~n", [TagString, BuildId, Msg]);
+  io:format("~s(ergo:~p): exited with a failure.~n  More info: ~p~n", [TagString, BuildId, Msg]);
 
-tagged_event(TagString, {task_init, {task, TaskName}}, #state{task_init=report}) ->
-  io:format("~s(ergo): init:  ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+tagged_event(TagString, {task_init, Bid, {task, TaskName}}, #state{task_init=report}) ->
+  io:format("~s(ergo:~p): init:  ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
-tagged_event(TagString, {task_started, {task, TaskName}}, #state{task_started=report}) ->
-  io:format("~s(ergo): start: ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+tagged_event(TagString, {task_started, Bid, {task, TaskName}}, #state{task_started=report}) ->
+  io:format("~s(ergo:~p): start: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
-tagged_event(TagString, {task_completed, {task, TaskName}}, #state{task_completed=report}) ->
-  io:format("~s(ergo): done: ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+tagged_event(TagString, {task_completed, Bid, {task, TaskName}}, #state{task_completed=report}) ->
+  io:format("~s(ergo:~p): done: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
-tagged_event(TagString, {task_skipped, {task, TaskName}}, #state{task_skipped=report}) ->
-  io:format("~s(ergo):   skipped: ~s ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+tagged_event(TagString, {task_skipped, Bid, {task, TaskName}}, #state{task_skipped=report}) ->
+  io:format("~s(ergo:~p):   skipped: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
-tagged_event(TagString, {task_changed_graph, {task, TaskName}}, #state{task_changed_graph=report}) ->
-  io:format("~s(ergo): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, [[Part, " "] || Part <- TaskName]]);
+tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task_changed_graph=report}) ->
+  io:format("~s(ergo:~p): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
-tagged_event(_TagString, {task_produced_output, {task, _TaskName}, Outlist}, #state{task_produced_output=report}) ->
+tagged_event(_TagString, {task_produced_output, _Bid, {task, _TaskName}, Outlist}, #state{task_produced_output=report}) ->
   io:format("~s", [Outlist]);
 
-tagged_event(TagString, {task_failed, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
-  io:format("~s(ergo): ~s failed ~p~nOutput:~n~s~n", [TagString, [[Part, " "] || Part <- TaskName], Exit, OutString]);
+tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
+  io:format("~s(ergo:~p): ~s failed ~p~nOutput:~n~s~n", [TagString, Bid, [[Part, " "] || Part <- TaskName], Exit, OutString]);
 
 tagged_event(TagString, Event, #state{unknown_event=report}) ->
-  io:format("~s(ergo): ~p~n", [TagString, Event]);
+  io:format("~s(ergo:?): ~p~n", [TagString, Event]);
 
 tagged_event(_, _, _) ->
   ok.

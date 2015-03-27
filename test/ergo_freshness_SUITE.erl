@@ -23,11 +23,9 @@ init_per_suite(Config) ->
   %application:start(mnesia),
 
   dbg:tracer(),
-  {ok,_}=dbg:tpl(ergo_app,[{'_', [], [{return_trace}]}]),
-  {ok,_}=dbg:tpl(net_kernel, start, []),
   {ok,_}=dbg:p(all, call),
 
-  application:set_env(ergo, config_dir, filename:join([Data, "config"]), [{persistent, true}]),
+  application:set_env(ergo, config_dir, filename:join([Priv, "config"]), [{persistent, true}]),
   application:start(ergo),
   ergo_sup:start_workspace(Priv),
   Config.
@@ -45,7 +43,8 @@ init_per_group(_GroupName, Config) ->
 end_per_group(_GroupName, _Config) ->
   ok.
 
-init_per_testcase(_TestCase, Config) ->
+init_per_testcase(TestCase, Config) ->
+  ct:pal("BEGIN: ~p", [TestCase]),
   Priv = ?config(priv_dir, Config),
   ergo_graphs:task_batch(Priv, 0, ?TASK,
                          [
