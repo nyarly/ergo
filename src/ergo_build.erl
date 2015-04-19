@@ -35,7 +35,7 @@ start(Workspace, BuildId, Targets) ->
   WorkspaceName = ergo_workspace_registry:normalize_name(Workspace),
   Events = ?VIA(WorkspaceName),
   gen_event:add_handler(Events, ?ID(WorkspaceName, BuildId), {WorkspaceName, BuildId, Targets}),
-  gen_event:notify(Events, {build_start, WorkspaceName, BuildId, Targets}).
+  ergo_events:build_start(WorkspaceName, BuildId, Targets).
 
 link_to(Workspace, Id, Pid) ->
   gen_event:call(?VIA(Workspace), ?ID(Workspace, Id), {exit_when_done, Pid}).
@@ -43,7 +43,7 @@ link_to(Workspace, Id, Pid) ->
 check_alive(Workspace, Id) ->
   case gen_event:call(?VIA(Workspace), ?ID(Workspace, Id), {check_alive}) of
     alive -> alive;
-    Other -> ct:pal("~p", [Other]), dead
+    Other -> ct:pal("While checking if ~p is alive: ~p", [?ID(Workspace, Id), Other]), dead
   end.
 
 %%%===================================================================
@@ -118,7 +118,7 @@ default_config() ->
   [].
 
 config_into_state({error, Error}, State=#state{build_id=BuildId, workspace_dir=Workspace}) ->
-  ergo_events:build_warning(Workspace, BuildId, {error, Error, config_path(Workspace)}),
+  ergo_events:build_warning(Workspace, BuildId, {configfile, Error, config_path(Workspace)}),
   State#state{config=default_config()};
 config_into_state({ok, Config}, State) ->
   State#state{config=Config}.
@@ -164,6 +164,7 @@ start_eligible_tasks([], #state{workspace_dir=WorkspaceDir, build_id=BuildId, st
 start_eligible_tasks([], #state{}) ->
   ok;
 start_eligible_tasks(TaskList, #state{workspace_dir=WorkspaceDir, build_id=BuildId, config=Config, run_counts=RunCounts}) ->
+  ergo_events:task_generation(WorkspaceDir, BuildId, TaskList),
   lists:foreach(
     fun(Task) -> start_task(WorkspaceDir, BuildId, Task, Config, RunCounts) end,
     TaskList).

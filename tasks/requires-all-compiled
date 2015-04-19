@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -ex
+
+test $# -ge 1
+TASK=${@}
+
+ergo-taskfile --requires rosters/beam.txt
+ergo-taskfile --produces rosters/beam.txt --task tasks/beam-chains
+for beam in $(< rosters/beam.txt); do
+  ergo-taskfile --requires $beam --task $TASK
+done

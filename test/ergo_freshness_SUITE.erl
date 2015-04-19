@@ -23,6 +23,7 @@ init_per_suite(Config) ->
   %application:start(mnesia),
 
   dbg:tracer(),
+  dbg:tpl(application, []),
   {ok,_}=dbg:p(all, call),
 
   application:set_env(ergo, config_dir, filename:join([Priv, "config"]), [{persistent, true}]),

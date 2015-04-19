@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -ex
+
+ergo-taskfile --requires rosters/source.txt
+ergo-taskfile --produces rosters/source.txt --task tasks/source-roster
+
+ergo-taskfile --produces rosters/beam.txt
+ergo-taskfile --produces rosters/names.txt
+
+mkdir -p rosters
+rm -f rosters/beam.txt
+rm -f rosters/names.txt
+for src in $(< rosters/source.txt); do
+  name=$(echo $src | sed 's!src/\(.*\)\.erl!\1')
+  beam="ebin/${name}.beam"
+  ergo-taskfile --requires $src --task tasks/erlc $name
+  ergo-taskfile --produces $beam --task tasks/erlc $name
+
+  echo $beam >> rosters/beam.txt
+  echo $name >> rosters/names.txt
+done

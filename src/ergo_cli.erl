@@ -1,5 +1,5 @@
 -module (ergo_cli).
--export ([tasks/5, taskfile/5, files/5]).
+-export ([tasks/5, taskfile/5, files/5, invalid/5]).
 
 tasks(Workspace, ReporterId, CmdName, Ifs, CommandLine) ->
   command_parse( Ifs, CmdName, CommandLine, run_tasks(spec), run_tasks(usage),
@@ -18,6 +18,13 @@ files(Workspace, ReporterId, CmdName, Ifs, CommandLine) ->
                  fun(Options, Args) ->
                      run_files(Workspace, ReporterId, Options, Args)
                  end).
+
+invalid(Workspace, ReporterId, CmdName, Ifs, CommandLine) ->
+  command_parse( Ifs, CmdName, CommandLine, run_invalid(spec), run_invalid(usage),
+                 fun(Options, Args) ->
+                     run_invalid(Workspace, ReporterId, Options, Args)
+                 end).
+
 
 command_parse(Ifs, CmdName, CommandLine, OptSpec, UsageExtra, Fun) ->
   case ergo_getopt:parse([{help, $h, "help", boolean, "Print this help text"}| OptSpec], string:tokens(CommandLine, Ifs)) of
@@ -108,6 +115,23 @@ maybe_filedep(false,true,Workspace,Reporter,First,Second) ->
   ergo_api:add_product(Workspace,Reporter,First,Second);
 maybe_filedep(false,false,_,_,_,_) ->
   ok.
+
+run_invalid(spec) ->
+  [];
+run_invalid(usage) ->
+  {
+   "[MESSAGE]",
+   [{"MESSAGE", "describing reason this task run is invalid (e.g. bad arguments)"}]
+  }.
+
+run_invalid(Workspace, ReporterId, Options, Args) ->
+  Task = ergo_task:taskname_from_token(ReporterId),
+  Message = case Args of
+              [] -> "No message";
+              M -> M
+            end,
+  ergo_task:invalid(Workspace, Task, Message).
+
 
 usage_string(ProgramName, OptSpecList, CmdLineTail, OptionsTail) ->
   io_lib:format("~ts~n~n~ts~n",

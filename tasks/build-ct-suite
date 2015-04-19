@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -ex
+
+SOURCE_SUITE=${1:?$0 needs arg 1 (a source suite)}
+SOURCE=test/${TARGET_SUITE}_SUITE.erl
+
+#The old makefile dep'd on 'build-ct-deps' which appears to be user config'd
+ergo-taskfile --produces test/${TARGET_SUITE}_SUITE.beam
+
+HEADERS=$(erlc -M -MP -MG ${SOURCE} | grep ':$' | grep -v '^/' | sed 's/:$//')
+for h in $HEADERS; do
+  ergo-taskfile --requires $h
+done
+
+TEST_ERLC_OPTS="+debug_info +warn_export_vars +warn_shadow_vars +warn_obsolete_guard -DTEST=1 -DEXTRA=1 +'{parse_transform, eunit_autoexport}'"
+erlc -v $(TEST_ERLC_OPTS) -o test/ $TARGET -pa ebin/

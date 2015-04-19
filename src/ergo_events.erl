@@ -9,7 +9,8 @@
 
 -module(ergo_events).
 
--export([build_requested/2, build_completed/4, build_warning/3, requirement_noted/3, production_noted/3,
+-export([build_requested/2, build_start/3, build_completed/4, build_warning/3, requirement_noted/3, production_noted/3,
+         task_generation/3,
          graph_changed/1, graph_contradiction/4, task_init/3, task_started/3, task_produced_output/4, task_failed/5, task_completed/3,
          task_changed_graph/3, task_skipped/3, tasks_joint/3, tasks_ordered/3]).
 
@@ -20,6 +21,9 @@
 build_requested(Workspace, Targets) ->
   send_event(Workspace, {build_requested, Targets}).
 
+-spec(build_start(ergo:workspace_name(), integer(), [ergo:target()]) -> ok).
+build_start(Workspace, BuildId, Targets) ->
+  send_event(Workspace, {build_start, Workspace, BuildId, Targets}).
 
 -spec(build_completed(ergo:workspace_name(), integer(), boolean(), term()) -> ok).
 build_completed(Workspace, BuildId, Succeeded, Message) ->
@@ -29,6 +33,9 @@ build_completed(Workspace, BuildId, Succeeded, Message) ->
 build_warning(Workspace, BuildId, Warning) ->
   send_event(Workspace, {build_warning, BuildId, Warning}).
 
+
+task_generation(Workspace, BuildId, TaskList) ->
+  send_event(Workspace, {task_generation, BuildId, TaskList}).
 
 %% @spec:	requirement_noted(product::ergo:produced(), dependency::ergo:produced()) -> ok.
 %% @end

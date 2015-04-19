@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -ex
+
+ergo-taskfile --requires tasks/rosters/suite_names.txt
+ergo-taskfile --produces tasks/rosters/suite_names.txt --task tasks/suite-roster
+SUITE_NAMES=$(< rosters/suite_names.txt)
+
+for f in $SUITE_NAMES; do
+  ergo-taskfile --requires log/results/$f
+  ergo-taskfile --produces log/results/$f --task tasks/tests-ct $f
+done
+
+for f in $SUITE_NAMES; do
+  test -f log/results/$f
+  tail -n 1 log/results/$f | grep -v failed
+done

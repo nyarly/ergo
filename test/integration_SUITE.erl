@@ -168,7 +168,7 @@ root_task() ->
 root_task(Config) ->
   Workspace = [proplists:get_value(priv_dir, Config), "root_task/project"],
   ergo:watch(Workspace),
-  Id = ergo:run_build(Workspace, [{task, [<<"tasks/root">>]}]),
+  {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/root">>]}]),
   ergo_api:wait_on_build(Workspace, Id),
   match_dir([proplists:get_value(priv_dir, Config), "root_task/result"], Workspace),
   ok.
@@ -178,7 +178,7 @@ two_tasks() ->
 two_tasks(Config) ->
   Workspace = [proplists:get_value(priv_dir, Config), "two_tasks/project"],
   ergo:watch(Workspace),
-  Id = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
   ergo_api:wait_on_build(Workspace, Id),
   match_dir([proplists:get_value(priv_dir, Config), "two_tasks/result"], Workspace),
   Id2 = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),

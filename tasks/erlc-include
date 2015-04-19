@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -ex
+
+if [ -d ebin/ ]; then
+  find include/ src/ -type f -name \*.hrl -newer ebin -exec touch $(shell find src/ -type f -name "*.erl") \; 2>/dev/null || printf ''; \
+fi

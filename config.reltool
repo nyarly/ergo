@@ -1,8 +1,13 @@
-%% config generated at {2015,3,19} {10,42,3}
+%% config generated at {2015,4,6} {2,5,39}
 {sys,[{lib_dirs,["/home/judson/erlang"]},
       {erts,[]},
       {app,common_test,[{incl_cond,exclude}]},
-      {app,ergo,[{incl_cond,include},{lib_dir,"/home/judson/erlang/ergo"}]},
+      {app,ergo,[
+                 {incl_cond,include},
+                 {lib_dir,"/home/judson/erlang/ergo"},
+                 {excl_app_filters,["^logs/.*", "^\\.git/.*", "^deps/.*", ".*sw[poq]$"]}
+                ]},
+      {app,erl_interface,[{incl_cond,include},{excl_archive_filters,["^include$","^priv$","^bin$"]}]},
       {app,eunit,[{incl_cond,exclude}]},
       {app,riak,[{incl_cond,exclude}]},
       {app,sasl,[{mod,systools_make,[{incl_cond,exclude}]}]},
@@ -12,4 +17,5 @@
       {boot_rel,"ergo"},
       {rel,"ergo","0.1.0",[ergo,{mnesia,load}]},
       {rel,"start_sasl","0.1.0",[sasl,ergo]},
-      {excl_app_filters,[".*riak.*",".*tsung.*"]}]}.
+      {excl_app_filters,[".*riak.*",".*tsung.*"]}
+      ]}.

@@ -2,7 +2,7 @@
 -behavior(gen_server).
 %% API
 -export([current/0, taskname_from_token/1, start_link/4, task_name/1,
-         add_dep/4, add_req/4, add_prod/4, add_co/4, add_seq/4, skip/2]).
+         add_dep/4, add_req/4, add_prod/4, add_co/4, add_seq/4, skip/2, invalid/3]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -11,7 +11,17 @@
 
 -define(ERGO_TASK_ENV, "ERGO_TASK_ID").
 
--record(state, {workspace, build_id, name, runspec, cmdport, output=[], graphitems=[], skipped=false}).
+-record(state, {
+          workspace,
+          build_id,
+          name,
+          runspec,
+          cmdport,
+          output=[],
+          graphitems=[],
+          skipped=false,
+          invalid=false
+         }).
 
 start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir, BuildId, Config) ->
   gen_server:start_link(?VIA(WorkspaceDir, Taskname), ?MODULE, {RunSpec, WorkspaceDir, BuildId, Config}, []).
@@ -55,6 +65,10 @@ add_seq(Workspace, Taskname, From, To) ->
 skip(Workspace, Taskname) ->
   gen_server:call(?VT(Workspace, Taskname), {skip}).
 
+-spec(invalid(ergo:workspace_name(), ergo:taskname(), string()) -> ok).
+invalid(Workspace, Taskname, Message) ->
+  gen_server:call(?VT(Workspace, Taskname), {invalid, Message}).
+
 
 %%% gen_server callbacks
 
@@ -62,7 +76,7 @@ init({TaskSpec, WorkspaceDir, BuildId, Config}) ->
   {TaskName, Command, Args} = TaskSpec,
   ergo_events:task_init(WorkspaceDir, BuildId, {task, TaskName}),
   process_flag(trap_exit, true),
-  CmdPort = launch_task(Command, TaskName, Args, WorkspaceDir, Config),
+  CmdPort = (catch launch_task(Command, TaskName, Args, WorkspaceDir, Config)),
   process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec).
 
 handle_call(task_name, _From, State) ->
@@ -80,6 +94,8 @@ handle_call({add_seq, From, To}, _From, State) ->
 handle_call({skip}, _From, State) ->
   NewState = skipped(State),
   {reply, ok, NewState};
+handle_call({invalid, Message}, _, State) ->
+  {reply, ok, become_invalid(Message, State)};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
@@ -124,7 +140,7 @@ launch_task(Command, TaskName, Args, Dir, Config) ->
            use_stdio,
            stderr_to_stdout
           ],
-  catch open_port( {spawn_executable, Command}, PortConfig).
+  open_port( {spawn_executable, Command}, PortConfig).
 
 add_item(State=#state{graphitems=GraphItems}, Item) ->
   State#state{graphitems=[Item | GraphItems]}.
@@ -133,6 +149,11 @@ skipped(State=#state{workspace=Workspace,build_id=BuildId, name=Name, cmdport=Cm
   ergo_events:task_skipped(Workspace, BuildId, {task, Name}),
   port_close(CmdPort),
   State#state{skipped=true}.
+
+become_invalid(Message, State=#state{workspace=Workspace, build_id=BuildId, name=Name, cmdport=CmdPort}) ->
+  ergo_events:task_invalid(Workspace, BuildId, Name, Message),
+  port_close(CmdPort),
+  State#state{invalid=true}.
 
 task_env(Workspace, TaskName, Config) ->
   [
@@ -152,9 +173,13 @@ task_path(Config) ->
 received_data(State=#state{workspace=Workspace,build_id=BuildId, name=Name,output=Output}, Data) ->
   ergo_events:task_produced_output(Workspace, BuildId, {task, Name}, Data),
   State#state{output=[Data|Output]}.
+
 exited(_Reason,_Name) ->
   ok.
 
+exit_status(Status, State=#state{workspace=Workspace, build_id=BuildId, name=Name,invalid=true}) ->
+  ergo_graphs:task_invalid(Workspace, BuildId, Name),
+  record_and_report(Status, {err, invalid}, State);
 exit_status(Status, State=#state{skipped=true}) ->
   record_and_report(Status, {ok, no_change}, State#state{graphitems=[]});
 exit_status(Status, State=#state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph}) ->

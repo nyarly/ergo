@@ -1,7 +1,7 @@
 -module(ergo_graphs).
 -behavior(gen_server).
 %% API
--export([start_link/1, get_products/2,get_dependencies/2,get_metadata/2, build_list/2,task_batch/5]).
+-export([start_link/1, get_products/2,get_dependencies/2,get_metadata/2, build_list/2,task_batch/5,task_invalid/3]).
 -export([statement_for_edge/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -53,6 +53,10 @@ get_metadata(Workspace, Target) ->
 task_batch(Workspace, BuildId, Task, Graph, Succeeded) ->
   gen_server:call(?VIA(Workspace), {task_batch, BuildId, Task, Graph, Succeeded}).
 
+-spec(task_invalid(ergo:workspace_name(), ergo:build_id(), ergo:taskname()) -> ok).
+task_invalid(Workspace, BuildId, Task) ->
+  gen_server:call(?VIA(Workspace), {task_invalid, BuildId, Task}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -77,9 +81,11 @@ handle_call({dependencies, Task}, _From, State) ->
 handle_call({build_list, Targets}, _From, State) ->
   {NewState, Result} = handle_build_list(State,Targets),
   {reply, Result, NewState};
+handle_call({task_invalid, BuildId, Task}, _From, State) ->
+  {reply, invalidate_task(BuildId, Task, State), State};
 handle_call({task_batch, BuildId, Task, Graph, Succeeded}, _From, OldState) ->
   State = update_batch_id(OldState),
-  {reply, maybe_notify_changed(process_task_batch(Task, Graph, Succeeded, State), BuildId, Task, State), State};
+  {reply, absorb_task_batch(BuildId, Task, Graph, Succeeded, State), State};
 handle_call({get_metadata, Thing}, _From, State) ->
   {reply, handle_get_metadata(Thing, State), State};
 
@@ -100,6 +106,70 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 %%%
+
+absorb_task_batch(BuildId, Task, Graph, Succeeded, State) ->
+  maybe_notify_changed(process_task_batch(Task, Graph, Succeeded, State), BuildId, Task, State).
+
+invalidate_task(BuildId, Task, State) ->
+  ct:pal("~p ~p ~p", [BuildId, Task, State]),
+  report_invalid_provenences( remove_task(Task, State), Task, BuildId, State).
+
+remove_task_provenences(Task, #state{provenence=Pvs}) ->
+  qlc:eval(qlc:q([ets:delete_object(Pvs, Prv) || Prv=#provenence{task=T} <- ets:table(Pvs), T=:=Task])).
+
+provenence_about_edges(EdgeList, #state{provenence=Pvs}) ->
+  qlc:eval(qlc:q([{Edge, Prv} || Prv=#provenence{edge_id=E} <- ets:table(Pvs),
+                                 Edge <- EdgeList,
+                                 E=:=Edge#seq.edge_id])).
+
+remove_edge_pairs(EPs, #state{edges=ETab, provenence=PTab}) ->
+  [{ets:detele_object(Edge, ETab), ets:delete_object(PTab, Prv)} || {Edge, Prv} <- EPs].
+
+report_invalid_provenences(EPs, Task, BuildId, #state{workspace=Workspace}) ->
+  [ergo_events:invalid_provenence(Workspace, BuildId, Task, EP) || EP <- EPs].
+
+remove_task_vertex(TaskName, State=#state{vertices=Vs}) ->
+  TaskV = task_by_name(TaskName, State),
+  ets:delete_object(Vs, TaskV).
+
+
+remove_task(TaskName, State) ->
+  InvalidEdges = edges_about_task(TaskName, State),
+  InvProvs = provenence_about_edges(InvalidEdges, State),
+
+  remove_task_vertex(TaskName, State),
+  remove_task_provenences(TaskName, State),
+  remove_edge_pairs(InvProvs, State),
+  InvProvs.
+
+edges_about_task(Task, State) ->
+  qlc:eval( qlc:append(
+              [
+               meta_about_task(Task, State),
+               seq_about_task(Task, State),
+               also_about_task(Task, State),
+               production_about_task(Task, State),
+               requirement_about_task(Task, State)
+              ])).
+
+meta_about_task(Task, #state{edges=Es}) ->
+  qlc:q([Edge || Edge=#task_meta{about=T} <- ets:table(Es), Task =:= T]).
+
+seq_about_task(Task, #state{edges=Es}) ->
+  qlc:q([Edge || Edge=#seq{before=B,then=T} <- ets:table(Es), (B =:= Task) or (T =:= Task)]).
+
+also_about_task(Task, #state{edges=Es}) ->
+  qlc:q([Edge || Edge=#cotask{task=B,also=T} <- ets:table(Es), (B =:= Task) or (T =:= Task)]).
+
+production_about_task(Task, #state{edges=Es}) ->
+  qlc:q([Edge || Edge=#production{task=T} <- ets:table(Es), T =:= Task]).
+
+requirement_about_task(Task, #state{edges=Es}) ->
+  qlc:q([Edge || Edge=#requirement{task=T} <- ets:table(Es), T =:= Task]).
+
+
+
+
 
 
 %%% Persistence
@@ -640,6 +710,16 @@ cache_one_task(#task{name=Name}, Graph, TaskLookup) ->
 all_tasks(#state{vertices=Vertices}) ->
   qlc:eval(qlc:q([Task || Task <- ets:table(Vertices), is_record(Task, task)])).
 
+-spec(task_by_name(ergo:taskname(), #state{}) -> #task{} | no_task).
+task_by_name(Name, #state{vertices=Vs}) ->
+  ct:pal("~p", [ets:tab2list(Vs)]),
+  ct:pal("~p", [#task{name=Name}]),
+  ct:pal("~p", [Name]),
+  case qlc:eval(qlc:q([Task || Task=#task{name=N} <- ets:table(Vs), N =:= Name])) of
+    [] -> no_task;
+    [Task | _] -> Task
+  end.
+
 -spec(all_seq_edges(#state{}) -> [#seq{}]).
 all_seq_edges(State) ->
   qlc:eval(qlc:append([dep_implied_seq_query(State), req_implied_seq_query(State), explicit_seq_query(State)])).
@@ -825,6 +905,16 @@ digraph_test_() ->
                   ?assertMatch(false,
                                process_task_batch(TaskName, [ {dep, ProductName, DependsOn} ], true, State)),
                   ?assertEqual(1, length(ets:tab2list(State#state.edges)))
+                end)
+     end,
+     fun(State) -> % invalid task is removed
+         ?_test(begin
+                  process_task_batch(OtherTaskName, [
+                                                     {prod, TaskName, ProductName}
+                                                    ], true, State),
+                  ?assertMatch([#task{name=TaskName}], ets:select(State#state.vertices, [{#task{name=TaskName, _='_'},[],['$_']}])),
+                  remove_task(TaskName, State),
+                  ?assertNotMatch([#task{name=TaskName}], ets:select(State#state.vertices, [{#task{name=TaskName, _='_'},[],['$_']}]))
                 end)
      end,
      fun(State) ->

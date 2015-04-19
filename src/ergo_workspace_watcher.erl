@@ -11,10 +11,12 @@
 
 -record(state, {
           tag,
-          graph_changed        = silent,
+          graph_changed        = report,
+          build_warning        = report,
           build_start          = report,
           build_completed      = report,
-          task_init            = silent,
+          task_generation      = report,
+          task_init            = report,
           task_started         = report,
           task_completed       = report,
           task_skipped         = report,
@@ -96,9 +98,11 @@ format_event(State=#state{tag=Tag},  Event) ->
 
 
 tagged_event(_, Event, #state{graph_changed=silent})        when element(1, Event) =:= graph_changed        -> ok;
+tagged_event(_, Event, #state{build_warning=silent})        when element(1, Event) =:= build_warning        -> ok;
 tagged_event(_, Event, #state{build_start=silent})          when element(1, Event) =:= build_start          -> ok;
 tagged_event(_, Event, #state{build_completed=silent})      when element(1, Event) =:= build_completed      -> ok;
 tagged_event(_, Event, #state{task_init=silent})            when element(1, Event) =:= task_init            -> ok;
+tagged_event(_, Event, #state{task_generation=silent})      when element(1, Event) =:= task_generation      -> ok;
 tagged_event(_, Event, #state{task_started=silent})         when element(1, Event) =:= task_started         -> ok;
 tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
 tagged_event(_, Event, #state{task_skipped=silent})         when element(1, Event) =:= task_skipped         -> ok;
@@ -109,6 +113,11 @@ tagged_event(_, Event, #state{task_failed=silent})          when element(1, Even
 
 tagged_event(TagString, {graph_changed}, #state{graph_changed=report}) ->
   io:format("~n~s(ergo): graph changed", [TagString]);
+
+tagged_event(TagString, {build_warning, BuildId, {configfile, Error, Path}}, #state{build_warning=report}) ->
+  io:format("~n~s(ergo:~p) WARN: Couldn't open config file at '~s' because <~p>.~n", [TagString, BuildId, Path, Error]);
+tagged_event(TagString, {build_warning, BuildId, Warning}, #state{build_warning=report}) ->
+  io:format("~n~s(ergo:~p) WARN: ~p~n", [TagString, BuildId, Warning]);
 
 tagged_event(TagString, {build_start, Workspace, BuildId, Targets}, #state{build_start=report}) ->
   io:format("~n~s(ergo): build (ergo:~p) targets: ~p starting in:~n   ~s ~n", [TagString, BuildId, Targets, Workspace]);
@@ -121,6 +130,9 @@ tagged_event(TagString, {build_completed, BuildId, false, Msg}, #state{build_com
 
 tagged_event(TagString, {task_init, Bid, {task, TaskName}}, #state{task_init=report}) ->
   io:format("~s(ergo:~p): init:  ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
+
+tagged_event(TagString, {task_generation, Bid, Tasklist}, #state{task_generation=report}) ->
+  io:format("~s(ergo:~p): new task generation: ~s ~n", [TagString, Bid, join_iolist([join_iolist(Task," ") || Task <- Tasklist]," , ")]);
 
 tagged_event(TagString, {task_started, Bid, {task, TaskName}}, #state{task_started=report}) ->
   io:format("~s(ergo:~p): start: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
@@ -137,7 +149,7 @@ tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task
 tagged_event(_TagString, {task_produced_output, _Bid, {task, _TaskName}, Outlist}, #state{task_produced_output=report}) ->
   io:format("~s", [Outlist]);
 
-tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
+tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, OutString}, #state{task_failed=report}) ->
   io:format("~s(ergo:~p): ~s failed ~p~nOutput:~n~s~n", [TagString, Bid, [[Part, " "] || Part <- TaskName], Exit, OutString]);
 
 tagged_event(TagString, Event, #state{unknown_event=report}) ->
@@ -146,6 +158,10 @@ tagged_event(TagString, Event, #state{unknown_event=report}) ->
 tagged_event(_, _, _) ->
   ok.
 
+
+join_iolist([], _) -> [];
+join_iolist([Head | Tail], Sep) ->
+  [Head | [[Sep, El] || El <- Tail]].
 
 
 %format_status(normal, [PDict, State]) ->

@@ -67,7 +67,7 @@ build_state(WorkspaceDir) ->
 
 handle_call({start_build, {Targets}}, _From, State=#state{workspace_dir=Workspace,build_count=BuildCount}) ->
   ergo_build:start(Workspace, BuildCount, Targets),
-  {reply, BuildCount, State#state{build_count=BuildCount+1}};
+  {reply, {ok, {build_id, BuildCount}}, State#state{build_count=BuildCount+1}};
 handle_call({start_task, BuildId, RunSpec, Config}, _From, State=#state{task_limit=TaskLimit, workspace_dir=Workspace}) ->
   Reply = ergo_tasks_soop:start_task(TaskLimit, RunSpec, Workspace, BuildId, Config),
   {reply, Reply, State};

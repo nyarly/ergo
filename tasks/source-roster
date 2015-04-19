@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -ex
+
+mkdir -p rosters
+find src -name '*.erl' > rosters/source.txt
