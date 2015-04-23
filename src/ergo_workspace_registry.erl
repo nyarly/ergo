@@ -86,7 +86,7 @@ reg_key_for(Workspace,Role,Name) ->
 index_for(Role,Index) ->
   RoleB = erlang:atom_to_binary(Role, unicode),
   IndexB = erlang:integer_to_binary(Index),
-  <<RoleB/binary," ",IndexB/binary>>.
+  <<RoleB/binary,"_",IndexB/binary>>.
 
 build_state() ->
   #state{item_index=1, registry=ets:new(ergo_registration, [set, {keypos, #registration.key}])}.
@@ -125,13 +125,13 @@ lookup(RegKey, RegTab) ->
 process_id(RegKey, RegTab) ->
   case ets:lookup(RegTab, RegKey) of
     [#registration{index=Id}|_Rest] -> Id;
-    _ -> unknown
+    _ -> {unknown_reg, RegKey}
   end.
 
 name_for_id(ProcId, RegTab) ->
   Res = case ets:match_object(RegTab, #registration{index=ProcId, _='_'}) of
     [#registration{key=#registry_key{workspace=WS,role=R,name=N}}|_Rest] -> {WS,R,N};
-    _ -> unknown
+    _ -> {unknown_name, ProcId, ets:tab2list(RegTab)}
   end,
   Res.
 

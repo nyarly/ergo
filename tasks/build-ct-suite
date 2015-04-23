@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -ex
 
-SOURCE_SUITE=${1:?$0 needs arg 1 (a source suite)}
+env | grep 'ERGO'
+if [ $# -lt 1 ]; then
+  ergo-task-invalid "$0 needs arg 1 (a source suite)"
+  exit 1
+fi
+
+SOURCE_SUITE=${1:?$(ergo-task-invalid "$0 needs arg 1 (a source suite)")}
 SOURCE=test/${TARGET_SUITE}_SUITE.erl
 
 #The old makefile dep'd on 'build-ct-deps' which appears to be user config'd

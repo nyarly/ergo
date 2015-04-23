@@ -19,5 +19,5 @@ if [ "$SEP" = "none" ]; then
   exit 1
 fi
 
-${ERL_CALL} -a "ergo_cli tasks [\"${ERGO_WORKSPACE}\", \"${ERGO_TASK_ID}\", \"${0}\", \"${sep}\", \"$(IFS=$sep;echo "${*}")\"]" -name ${ERGO_NODE}
-echo
+${ERL_CALL} -h "${ERGO_TASK_ID}" -a "ergo_cli tasks [\"${ERGO_WORKSPACE}\", \"${ERGO_TASK_ID}\", \"${0}\", \"${sep}\", \"$(IFS=$sep;echo "${*}")\"]" -name ${ERGO_NODE}
+echo tasks

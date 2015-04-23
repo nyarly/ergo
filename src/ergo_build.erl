@@ -126,8 +126,8 @@ config_into_state({ok, Config}, State) ->
 task_failed(_Task, Reason, #state{build_id=BuildId, workspace_dir=WorkspaceDir}) ->
   ergo_events:build_completed(WorkspaceDir, BuildId, false, {task_failed, Reason}).
 
-task_changed_graph({task, _Task}, State=#state{completed=Cmplt}) ->
-  start_tasks(State#state{build_spec=out_of_date, completed=Cmplt + 1}).
+task_changed_graph({task, _Task}, State) ->
+  start_tasks(State#state{build_spec=out_of_date}).
 
 task_completed({task, Task}, State = #state{run_counts= RunCounts, workspace_dir=WorkspaceDir, complete_tasks=PrevCompleteTasks, completed=PrevCplt}) ->
   CompleteTasks = [Task | PrevCompleteTasks],

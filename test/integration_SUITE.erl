@@ -17,10 +17,12 @@ suite() ->
   ].
 init_per_suite(Config) ->
   dbg:tracer(),
-  %{ok, _} = dbg:tpl(ergo_task,record_and_report, []),
+  %{ok, _} = dbg:tpl(ergo_cli, taskfile, []),
+  %{ok, _} = dbg:tpl(ergo_api, []),
+  %{ok, _} = dbg:tpl(ergo_task,  [{'_',[],[{return_trace}]}]),
   %{ok, _} = dbg:tpl(ergo_build,handle_event, [{['$1','$2'], [{'=/=', {'element', 1, '$1'}, task_produced_output}], []}]),
   %{ok, _} = dbg:tpl(ergo_build,start_tasks, []),
-%  {ok, _} = dbg:tpl(ergo_build,start_task, 5, []),
+  %{ok, _} = dbg:tpl(ergo_build,start_task, 5, []),
 %  {ok, _} = dbg:tpl(ergo_build,task_changed_graph, []),
 %  {ok, _} = dbg:tpl(ergo_build,task_completed, []),
   %j
@@ -55,7 +57,8 @@ init_per_testcase(TestCase, Config) ->
   application:start(ergo),
   [{result, ResDir}, {config, CfgDir}, {workspace, WS} | Config].
 
-end_per_testcase(_TestCase, _Config) ->
+end_per_testcase(TestCase, _Config) ->
+  ct:pal("END: ~p", [TestCase]),
   application:stop(ergo),
   application:stop(mnesia),
   application:stop(crypto),
@@ -66,7 +69,7 @@ groups() ->
   [].
 
 all() ->
-  [root_task, two_tasks].
+  [root_task, two_tasks, invalid_task].
 
 %%--
 %% HELPERS
@@ -116,14 +119,17 @@ match_dir(Reference, Test) ->
   ct:pal("Comparing ~p to ~p", [filename:flatten(Path) || Path <- [Reference, Test]]),
   dir_recurse(Reference,
               fun(directory, _Path) -> ok;
-                 (_Type, Path) ->
-                  ct:pal("Checking: ~p", [filename:flatten(['.'|Path])]),
-                  RefHash = digest([Reference, Path]),
-                  case digest([Test, Path]) of
-                    RefHash -> ok;
-                    _ -> throw({fail, {nomatch, Path}})
-                  end
+                 (_Type, Path) -> match_file(Reference, Test, Path)
               end).
+
+match_file(Reference, Test, Path) ->
+  ct:pal("Checking: ~p", [filename:flatten(['.'|Path])]),
+  RefHash = digest([Reference, Path]),
+  case digest([Test, Path]) of
+    RefHash -> ok;
+    _ -> throw({fail, {nomatch, Path}})
+  end.
+
 
 digest(Path) ->
   {ok, Io} = file:open(Path, [read, raw, binary]),
@@ -150,7 +156,7 @@ dir_recurse(Dir, Rel, Fun) ->
 
 dir_recurse(Dir, Path, _Fun, {error,Reason}) ->
   throw({Reason, [Dir, Path]});
-dir_recurse(Dir, Path, Fun, {ok, #file_info{type=directory}}) ->
+dir_recurse(Dir,  Path, Fun, {ok, #file_info{type=directory}}) ->
   Fun(directory, Path),
   dir_recurse(Dir, Path, Fun);
 dir_recurse(_Dir, Path, Fun, {ok, #file_info{type=Type}}) when Type =:= regular; Type =:= symlink ->
@@ -178,12 +184,36 @@ two_tasks() ->
 two_tasks(Config) ->
   Workspace = [proplists:get_value(priv_dir, Config), "two_tasks/project"],
   ergo:watch(Workspace),
+
   {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
   ergo_api:wait_on_build(Workspace, Id),
   match_dir([proplists:get_value(priv_dir, Config), "two_tasks/result"], Workspace),
-  Id2 = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+
+  {ok, {build_id, Id2}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
   ergo_api:wait_on_build(Workspace, Id2),
+  match_dir([proplists:get_value(priv_dir, Config), "two_tasks/result"], Workspace),
+
   ok.
+
+invalid_task() ->
+  [].
+invalid_task(Config) ->
+  PrivDir = proplists:get_value(priv_dir, Config),
+  Workspace = [PrivDir, "invalid_task/project"],
+  ergo:watch(Workspace),
+  {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo_api:wait_on_build(Workspace, Id),
+  %build should fail, without change to project...
+  %match_dir([PrivDir, "invalid_task/project"], Workspace),
+  %fix it...
+  copy_file([PrivDir, "invalid_task/fixed/tasks/two"], [PrivDir, "invalid_task/project/tasks/two"]),
+  ct:pal("Fixed build tasks - re-running"),
+  %and try again
+  {ok, {build_id, Id2}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo_api:wait_on_build(Workspace, Id2),
+  match_dir([PrivDir, "invalid_task/result"], Workspace),
+  ok.
+
 
 %%% Needed test cases:
 %%% * Failed build

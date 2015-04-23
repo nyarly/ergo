@@ -111,7 +111,6 @@ absorb_task_batch(BuildId, Task, Graph, Succeeded, State) ->
   maybe_notify_changed(process_task_batch(Task, Graph, Succeeded, State), BuildId, Task, State).
 
 invalidate_task(BuildId, Task, State) ->
-  ct:pal("~p ~p ~p", [BuildId, Task, State]),
   report_invalid_provenences( remove_task(Task, State), Task, BuildId, State).
 
 remove_task_provenences(Task, #state{provenence=Pvs}) ->
@@ -120,24 +119,32 @@ remove_task_provenences(Task, #state{provenence=Pvs}) ->
 provenence_about_edges(EdgeList, #state{provenence=Pvs}) ->
   qlc:eval(qlc:q([{Edge, Prv} || Prv=#provenence{edge_id=E} <- ets:table(Pvs),
                                  Edge <- EdgeList,
-                                 E=:=Edge#seq.edge_id])).
+                                 E=:=element(#seq.edge_id, Edge)])).
 
 remove_edge_pairs(EPs, #state{edges=ETab, provenence=PTab}) ->
-  [{ets:detele_object(Edge, ETab), ets:delete_object(PTab, Prv)} || {Edge, Prv} <- EPs].
+  [{ets:delete_object(ETab, Edge), ets:delete_object(PTab, Prv)} || {Edge, Prv} <- EPs].
 
-report_invalid_provenences(EPs, Task, BuildId, #state{workspace=Workspace}) ->
-  [ergo_events:invalid_provenence(Workspace, BuildId, Task, EP) || EP <- EPs].
+report_invalid_provenence(Workspace, BuildId, About, {Edge, #provenence{task=Asserter}}) ->
+  ergo_events:invalid_provenence(Workspace, BuildId, About, Asserter, statement_for_edge(Edge)).
 
-remove_task_vertex(TaskName, State=#state{vertices=Vs}) ->
-  TaskV = task_by_name(TaskName, State),
+
+report_invalid_provenences(EPs, Task, BuildId, State=#state{workspace=Workspace}) ->
+  dump_to(State),
+  [report_invalid_provenence(Workspace, BuildId, Task, EP) || EP <- EPs].
+
+remove_task_by_name(TaskName, State=#state{vertices=Vs}) ->
+  remove_task_vertex(task_by_name(TaskName, State), Vs).
+
+remove_task_vertex(no_task_recorded, _Vs) ->
+  ok;
+remove_task_vertex(TaskV, Vs) ->
   ets:delete_object(Vs, TaskV).
-
 
 remove_task(TaskName, State) ->
   InvalidEdges = edges_about_task(TaskName, State),
   InvProvs = provenence_about_edges(InvalidEdges, State),
 
-  remove_task_vertex(TaskName, State),
+  remove_task_by_name(TaskName, State),
   remove_task_provenences(TaskName, State),
   remove_edge_pairs(InvProvs, State),
   InvProvs.
@@ -710,13 +717,11 @@ cache_one_task(#task{name=Name}, Graph, TaskLookup) ->
 all_tasks(#state{vertices=Vertices}) ->
   qlc:eval(qlc:q([Task || Task <- ets:table(Vertices), is_record(Task, task)])).
 
--spec(task_by_name(ergo:taskname(), #state{}) -> #task{} | no_task).
+-spec(task_by_name(ergo:taskname(), #state{}) -> #task{} | no_task_recorded).
 task_by_name(Name, #state{vertices=Vs}) ->
-  ct:pal("~p", [ets:tab2list(Vs)]),
-  ct:pal("~p", [#task{name=Name}]),
-  ct:pal("~p", [Name]),
   case qlc:eval(qlc:q([Task || Task=#task{name=N} <- ets:table(Vs), N =:= Name])) of
-    [] -> no_task;
+    [] ->
+      no_task_recorded;
     [Task | _] -> Task
   end.
 
@@ -910,11 +915,15 @@ digraph_test_() ->
      fun(State) -> % invalid task is removed
          ?_test(begin
                   process_task_batch(OtherTaskName, [
-                                                     {prod, TaskName, ProductName}
+                                                     {prod, TaskName, ProductName},
+                                                     {req, OtherTaskName, ProductName}
                                                     ], true, State),
                   ?assertMatch([#task{name=TaskName}], ets:select(State#state.vertices, [{#task{name=TaskName, _='_'},[],['$_']}])),
-                  remove_task(TaskName, State),
-                  ?assertNotMatch([#task{name=TaskName}], ets:select(State#state.vertices, [{#task{name=TaskName, _='_'},[],['$_']}]))
+                  Pairs = remove_task(TaskName, State),
+                  ?assertNotEqual(length(Pairs), 0),
+                  ?assertNotMatch([#task{name=TaskName}], ets:select(State#state.vertices, [{#task{name=TaskName, _='_'},[],['$_']}])),
+                  {_NewState,List} = handle_build_list(dump_to(State), [{task, OtherTaskName}]),
+                  ?assertEqual([{OtherTaskName, []}], List)
                 end)
      end,
      fun(State) ->

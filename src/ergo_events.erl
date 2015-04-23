@@ -9,10 +9,12 @@
 
 -module(ergo_events).
 
--export([build_requested/2, build_start/3, build_completed/4, build_warning/3, requirement_noted/3, production_noted/3,
-         task_generation/3,
-         graph_changed/1, graph_contradiction/4, task_init/3, task_started/3, task_produced_output/4, task_failed/5, task_completed/3,
-         task_changed_graph/3, task_skipped/3, tasks_joint/3, tasks_ordered/3]).
+-export([build_requested/2, build_start/3, build_completed/4, build_warning/3,
+         requirement_noted/3, production_noted/3, task_generation/3,
+         graph_changed/1, graph_contradiction/4, task_init/3, task_started/3,
+         task_produced_output/4, task_failed/5, invalid_provenence/5,
+         task_completed/3, task_changed_graph/3, task_skipped/3,
+         task_invalid/4, tasks_joint/3, tasks_ordered/3]).
 
 %% @spec:	build_requested(targets::target_list()) -> ok.
 %% @doc:	Emits a build_requested event
@@ -77,6 +79,13 @@ task_started(Workspace, BuildId, Task) ->
 task_produced_output(Workspace, BuildId, Task, Output) ->
   send_event(Workspace, {task_produced_output, BuildId, Task, Output}).
 
+%% @spec:	invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:task(), ergo:task(), ergo:graph_item()) -> ok.
+%% @end
+-spec invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:task(), ergo:task(), ergo:graph_item()) -> ok.
+invalid_provenence(Workspace, BuildId, About, Asserter, Stmt) ->
+  send_event(Workspace, {invalid_provenence, BuildId, About, Asserter, Stmt}).
+
+
 %% @spec:	task_failed(Task::ergo:task()) -> ok.
 %% @end
 -spec(task_failed(ergo:workspace_name(), ergo:build_id(), ergo:task(), term(), [string()]) -> ok).
@@ -94,6 +103,12 @@ task_changed_graph(Workspace, BuildId, Task) ->
 -spec(task_skipped(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
 task_skipped(Workspace, BuildId, Task) ->
   send_event(Workspace, {task_skipped, BuildId, Task}).
+
+%% @spec:	task_invalid(task::ergo:task()) -> ok.
+%% @end
+-spec(task_invalid(ergo:workspace_name(), ergo:build_id(), ergo:task(), string()) -> ok).
+task_invalid(Workspace, BuildId, Task, Message) ->
+  send_event(Workspace, {task_invalid, BuildId, Task, Message}).
 
 %% @spec:	task_completed(task::ergo:task()) -> ok.
 %% @end

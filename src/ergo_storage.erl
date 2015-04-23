@@ -7,22 +7,21 @@
 -spec(start() -> ok).
 start() ->
   _ = mnesia:stop(), % already started somehow?
-  set_storage_dir(),
-  mkdir_p(ergo_config:mnesia_dir()),
+  setup_storage(),
   ok = create_schema(),
   ok = start_mnesia(),
   TableList = lists:flatten([ergo_freshness:create_tables()]),
   ok = mnesia:wait_for_tables(TableList, 10000),
   ok.
 
-set_storage_dir() ->
-  application:set_env(mnesia, dir, ergo_config:mnesia_dir()).
+setup_storage() ->
+  MnesiaDir = ergo_config:mnesia_dir(),
+  io:format("Creating ~p", [MnesiaDir]),
+  filelib:ensure_dir(MnesiaDir),
+  set_storage_dir(MnesiaDir).
 
-mkdir_p("/") ->
-  ok;
-mkdir_p(Dir) ->
-  mkdir_p(filename:dirname(Dir)),
-  file:make_dir(Dir).
+set_storage_dir(Dir) ->
+  application:set_env(mnesia, dir, Dir).
 
 create_schema() ->
   case mnesia:create_schema([node()]) of

@@ -5,6 +5,9 @@
 
 -export([
          setup/1,
+         attach_workspace/0,
+         attach_workspace/1,
+         find_workspace/0,
          find_workspace/1,
          watch/1,
          run_build/2
@@ -36,6 +39,17 @@
 
 setup(Dir) ->
   ergo_workspace:setup(Dir).
+
+attach_workspace() ->
+  attach_workspace(os:getenv("PWD")).
+
+attach_workspace(Dir) ->
+  WS = find_workspace(Dir),
+  {ok, Ref} = ergo:watch(WS),
+  {ok, WS, Ref}.
+
+find_workspace() ->
+  find_workspace(os:getenv("PWD")).
 
 find_workspace(Dir) ->
   ergo_workspace:find_dir(Dir).

@@ -20,9 +20,11 @@
           task_started         = report,
           task_completed       = report,
           task_skipped         = report,
+          task_invalid         = report,
           task_changed_graph   = report,
           task_produced_output = report,
           task_failed          = report,
+          invalid_provenence   = report,
           unknown_event        = report
          }).
 
@@ -106,10 +108,12 @@ tagged_event(_, Event, #state{task_generation=silent})      when element(1, Even
 tagged_event(_, Event, #state{task_started=silent})         when element(1, Event) =:= task_started         -> ok;
 tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
 tagged_event(_, Event, #state{task_skipped=silent})         when element(1, Event) =:= task_skipped         -> ok;
+tagged_event(_, Event, #state{task_invalid=silent})         when element(1, Event) =:= task_invalid         -> ok;
 tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
 tagged_event(_, Event, #state{task_changed_graph=silent})   when element(1, Event) =:= task_changed_graph   -> ok;
 tagged_event(_, Event, #state{task_produced_output=silent}) when element(1, Event) =:= task_produced_output -> ok;
 tagged_event(_, Event, #state{task_failed=silent})          when element(1, Event) =:= task_failed          -> ok;
+tagged_event(_, Event, #state{invalid_provenence=silent})   when element(1, Event) =:= invalid_provenence   -> ok;
 
 tagged_event(TagString, {graph_changed}, #state{graph_changed=report}) ->
   io:format("~n~s(ergo): graph changed", [TagString]);
@@ -132,7 +136,7 @@ tagged_event(TagString, {task_init, Bid, {task, TaskName}}, #state{task_init=rep
   io:format("~s(ergo:~p): init:  ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
 tagged_event(TagString, {task_generation, Bid, Tasklist}, #state{task_generation=report}) ->
-  io:format("~s(ergo:~p): new task generation: ~s ~n", [TagString, Bid, join_iolist([join_iolist(Task," ") || Task <- Tasklist]," , ")]);
+  io:format("~s(ergo:~p): new task generation: ~s ~n", [TagString, Bid, join_iolist([join_iolist(Task," ") || Task <- Tasklist],", ")]);
 
 tagged_event(TagString, {task_started, Bid, {task, TaskName}}, #state{task_started=report}) ->
   io:format("~s(ergo:~p): start: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
@@ -141,16 +145,22 @@ tagged_event(TagString, {task_completed, Bid, {task, TaskName}}, #state{task_com
   io:format("~s(ergo:~p): done: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
 tagged_event(TagString, {task_skipped, Bid, {task, TaskName}}, #state{task_skipped=report}) ->
-  io:format("~s(ergo:~p):   skipped: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
+  io:format("~s(ergo:~p):   skipped: ~s ~n", [TagString, Bid, format_task(TaskName)]);
+
+tagged_event(TagString, {task_invalid, Bid, TaskName, Message}, #state{task_invalid=report}) ->
+  io:format([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: \"",Message,"\" ~n"]);
 
 tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task_changed_graph=report}) ->
   io:format("~s(ergo:~p): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
 
-tagged_event(_TagString, {task_produced_output, _Bid, {task, _TaskName}, Outlist}, #state{task_produced_output=report}) ->
-  io:format("~s", [Outlist]);
+tagged_event(_TagString, {task_produced_output, _Bid, {task, TaskName}, Outlist}, #state{task_produced_output=report}) ->
+  io:format("~p: ~s", [TaskName, Outlist]);
 
-tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, OutString}, #state{task_failed=report}) ->
+tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
   io:format("~s(ergo:~p): ~s failed ~p~nOutput:~n~s~n", [TagString, Bid, [[Part, " "] || Part <- TaskName], Exit, OutString]);
+
+tagged_event(TagString, {invalid_provenence, Bid, About, Asserter, Stmt}, #state{invalid_provenence=report}) ->
+  io:format([TagString, build_tag(Bid), <<"Invalid task ">>,format_task(About),<<" drawn into graph by statement: <<">>, format_statement(Stmt),<<">> by ">>,format_task(Asserter),<<"\n">>]);
 
 tagged_event(TagString, Event, #state{unknown_event=report}) ->
   io:format("~s(ergo:?): ~p~n", [TagString, Event]);
@@ -158,6 +168,23 @@ tagged_event(TagString, Event, #state{unknown_event=report}) ->
 tagged_event(_, _, _) ->
   ok.
 
+pfmt(Term) ->
+  io_lib:format("~p", [Term]).
+
+format_task(Taskname) ->
+  [<<"'">>, join_iolist(Taskname," "), <<"'">>].
+
+build_tag(BuildId) ->
+  [<<"(ergo:">>, pfmt(BuildId), <<"): ">>].
+
+format_statement({co, Task, Other}) ->
+  [format_task(Task), <<" whenever ">>, format_task(Other)];
+format_statement({seq, Task, Other}) ->
+  [format_task(Task), <<" precedes ">>, format_task(Other)];
+format_statement({dep, Task, Product}) ->
+  [format_task(Task), <<" requires ">>, Product];
+format_statement({prod, Task, Product}) ->
+  [format_task(Task), <<" produces ">>, Product].
 
 join_iolist([], _) -> [];
 join_iolist([Head | Tail], Sep) ->

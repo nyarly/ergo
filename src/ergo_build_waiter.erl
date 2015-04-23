@@ -9,7 +9,7 @@
 -behavior(gen_event).
 
 %% API
--export([wait_on/2, add_listener/2, block_until_dead/1]).
+-export([wait_on/2]).
 
 %% gen_event callbacks
 -export([init/1, handle_event/2, handle_call/2,
@@ -22,20 +22,22 @@
 %%% Module API
 %%%===================================================================
 wait_on(Workspace, BuildId) ->
-  add_listener(Workspace, BuildId),
-  block_until_dead(ergo_build:check_alive(Workspace,BuildId)),
+  Ref = {?MODULE, make_ref()},
+  add_listener(Workspace, BuildId, Ref),
+  block_until_dead(ergo_build:check_alive(Workspace,BuildId), Workspace, BuildId, Ref),
   ok.
 
-block_until_dead(alive) ->
+block_until_dead(alive, Workspace, BuildId, Ref) ->
   receive
     build_complete -> ok;
-    OtherThing -> ct:pal("Don't recognize: ~p~n", [OtherThing])
+    {gen_event_EXIT, Ref, normal} -> ok;
+    {gen_event_EXIT, _DifferentRef, normal} -> block_until_dead(alive, Workspace, BuildId, Ref);
+    OtherThing -> ct:pal("Waiter ~p: Don't recognize: ~p~n", [Ref, OtherThing])
   end;
-block_until_dead(_) ->
+block_until_dead(_, _, _, _) ->
   ok.
 
-add_listener(Workspace, BuildId) ->
-  Handler = {?MODULE, make_ref()},
+add_listener(Workspace, BuildId, Handler) ->
   gen_event:add_sup_handler(?VIA(Workspace), Handler, [self(),BuildId]),
   Handler.
 
@@ -43,6 +45,7 @@ add_listener(Workspace, BuildId) ->
 %%% gen_event callbacks
 %%%===================================================================
 init([Pid,BuildId]) ->
+  process_flag(trap_exit, true),
   {ok, #state{pid=Pid,build=BuildId}}.
 
 handle_event({build_completed, BuildId, _Success, _Message}, #state{pid=Pid,build=BuildId}) ->

@@ -1,0 +1,7 @@
+#!/bin/bash
+ergo-taskfile -r middle.txt
+ergo-taskfile -p middle.txt -t tasks/one
+
+ergo-taskfile -p out.txt
+
+cp middle.txt out.txt

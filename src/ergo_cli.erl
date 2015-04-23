@@ -124,13 +124,12 @@ run_invalid(usage) ->
    [{"MESSAGE", "describing reason this task run is invalid (e.g. bad arguments)"}]
   }.
 
-run_invalid(Workspace, ReporterId, Options, Args) ->
-  Task = ergo_task:taskname_from_token(ReporterId),
+run_invalid(Workspace, ReporterId, _Options, Args) ->
   Message = case Args of
               [] -> "No message";
               M -> M
             end,
-  ergo_task:invalid(Workspace, Task, Message).
+  ergo_api:invalid(Workspace, ReporterId, Message).
 
 
 usage_string(ProgramName, OptSpecList, CmdLineTail, OptionsTail) ->

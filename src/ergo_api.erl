@@ -1,7 +1,7 @@
 -module(ergo_api).
 
 -export([wait_on_build/2, add_product/4, add_required/4, add_file_dep/4,
-         add_cotask/4, add_task_seq/4, skip/2 ]).
+         add_cotask/4, add_task_seq/4, skip/2, invalid/3 ]).
 
 -spec(add_product(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:productname()) -> ergo:command_response()).
 add_product(Workspace, Reporter, Task, Product) ->
@@ -29,3 +29,6 @@ wait_on_build(Workspace, Id) ->
 
 skip(Workspace, Task) ->
   ergo_task:skip(Workspace, Task).
+
+invalid(Workspace, Task, Message) ->
+  ergo_task:invalid(Workspace, Task, Message).
