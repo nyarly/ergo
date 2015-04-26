@@ -10,7 +10,7 @@
 -module(ergo_events).
 
 -export([build_requested/2, build_start/3, build_completed/4, build_warning/3,
-         requirement_noted/3, production_noted/3, task_generation/3,
+         requirement_noted/3, production_noted/3, disclaimed_production/4, task_generation/3,
          graph_changed/1, graph_contradiction/4, task_init/3, task_started/3,
          task_produced_output/4, task_failed/5, invalid_provenence/5,
          task_completed/3, task_changed_graph/3, task_skipped/3,
@@ -50,6 +50,12 @@ requirement_noted(Workspace, Product, Dependency) ->
 -spec(production_noted(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
 production_noted(Workspace, Task, Product) ->
   send_event(Workspace, {production_noted, {Task, Product}}).
+
+%% @spec:	disclaimed_production(product::ergo:produced()) -> ok.
+%% @end
+-spec(disclaimed_production(ergo:workspace_name(), ergo:task(), ergo:produced(), [ergo:task()]) -> ok).
+disclaimed_production(Workspace, Task, Product, MistakenTasks) ->
+  send_event(Workspace, {disclaimed_production, {Task, Product, MistakenTasks}}).
 
 %% @spec:	graph_changed() -> ok.
 %% @doc:	The build graph has changed - the build should be re-evaluated

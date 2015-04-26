@@ -8,7 +8,9 @@
   terminate/2, code_change/3]).
 
 -define(NOTEST, true).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -include_lib("stdlib/include/qlc.hrl").
 
@@ -195,8 +197,10 @@ cleanup_state(#state{edges=Etab,vertices=Vtab,provenence=Ptab}) ->
   maybe_delete_table(Ptab),
   ok.
 
+-ifdef(EUNIT).
 clobber_files(WorkspaceRoot) ->
   [file:delete([depgraph_path_for(WorkspaceRoot), TabKind]) || TabKind <- [".vtab", ".etab", ".ptab"]].
+-endif.
 
 depgraph_path_for(Workspace) ->
   [Workspace, "/.ergo/depgraph"].
@@ -272,7 +276,8 @@ update_batch_id(State=#state{vertices=VerTab}) ->
           taskname,
           workspace,
           state,
-          contradictions
+          contradictions,
+          disclaimers
          }).
 
 -record(contradictions, { self, whole }).
@@ -288,18 +293,28 @@ maybe_notify_changed(#batch_status{changed=false}) ->
 maybe_notify_changed(Status=#batch_status{contradictions=undefined,taskname=Taskname,state=State}) ->
   {Self,Whole} = ergo_graph_contradictions:resolve(Taskname, State),
   maybe_notify_changed(Status#batch_status{contradictions=#contradictions{self=Self,whole=Whole}});
+maybe_notify_changed(Status=#batch_status{disclaimers=undefined,taskname=Taskname,state=State}) ->
+  maybe_notify_changed(Status#batch_status{disclaimers=ergo_graph_disclaims:check(Taskname, State)});
+
 maybe_notify_changed(#batch_status{
+                        disclaimers=[],
                         contradictions=#contradictions{self=[],whole=Contras},
                         build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
   report_contradictions(BuildId, Workspace, Taskname, Contras),
   dump_to(State),
   ergo_events:graph_changed(Workspace),
   {ok, changed};
+maybe_notify_changed(#batch_status{disclaimers=List,
+                                   build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
+  report_production_disclaimers(Workspace, BuildId, Taskname, List),
+  {err, {disclaimed_production, List}};
 maybe_notify_changed(#batch_status{contradictions=#contradictions{self=List},
                                    build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
-  report_contradictions(BuildId, Workspace, Taskname, List),
+  report_contradictions(Workspace, BuildId, Taskname, List),
   {err, {self_contradictions, List}}.
 
+report_production_disclaimers(Workspace, BuildId, Taskname, List) ->
+  ergo_events:disclaimed_production(Workspace, BuildId, Taskname, List).
 
 report_contradictions(Workspace, BuildId, Taskname, Contras) ->
   [ ergo_events:graph_contradiction(Workspace, BuildId, Taskname, Contra) || Contra <- Contras],

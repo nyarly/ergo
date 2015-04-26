@@ -26,6 +26,8 @@
           edge_id :: edge_id(), batch_id :: batch_id(), removed_id :: batch_id(), from :: normalized_product(), to :: normalized_product() }).
 -type edge_record() :: #seq{} | #cotask{} | #production{} | #dep{} | #requirement{} | #file_meta{} | #task_meta{}.
 
+-define(edge_id_pos, #seq.edge_id).
+
 -record(provenence, { edge_id :: edge_id(), task :: taskname() }).
 -record(edge_label, { from_edges :: [edge_id()] }).
 -record(gen_edge,   { from :: taskname(), to :: taskname(), implied_by :: [edge_id()] }).
