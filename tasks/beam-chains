@@ -11,7 +11,7 @@ mkdir -p rosters
 rm -f rosters/beam.txt
 rm -f rosters/names.txt
 for src in $(< rosters/source.txt); do
-  name=$(echo $src | sed 's!src/\(.*\)\.erl!\1')
+  name=$(echo $src | sed 's!src/\(.*\)\.erl!\1!')
   beam="ebin/${name}.beam"
   ergo-taskfile --requires $src --task tasks/erlc $name
   ergo-taskfile --produces $beam --task tasks/erlc $name

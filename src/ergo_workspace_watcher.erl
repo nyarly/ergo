@@ -11,18 +11,19 @@
 
 -record(state, {
           tag,
-          graph_changed        = report,
+          graph_changed        = silent,
           build_warning        = report,
           build_start          = report,
           build_completed      = report,
+          build_task_done      = report,
           task_generation      = report,
-          task_init            = report,
+          task_init            = silent,
           task_started         = report,
-          task_completed       = report,
+          task_completed       = silent,
           task_skipped         = report,
           task_invalid         = report,
           task_changed_graph   = report,
-          task_produced_output = report,
+          task_produced_output = silent,
           task_failed          = report,
           invalid_provenence   = report,
           unknown_event        = report
@@ -91,16 +92,17 @@ code_change(_OldVsn, State, _Extra) ->
 state_from_args([Tag]) ->
   #state{tag=Tag}.
 
-
+-define(pf(Stuff), io_lib:format("~p", [Stuff])).
+-define(tn(Taskname), format_task(Taskname)).
 
 format_event(State=#state{tag=none}, Event) ->
   tagged_event("", Event, State);
 format_event(State=#state{tag=Tag},  Event) ->
   tagged_event(["[",Tag,"] "], Event, State).
 
-
 tagged_event(_, Event, #state{graph_changed=silent})        when element(1, Event) =:= graph_changed        -> ok;
 tagged_event(_, Event, #state{build_warning=silent})        when element(1, Event) =:= build_warning        -> ok;
+tagged_event(_, Event, #state{build_task_done=silent})      when element(1, Event) =:= build_task_done      -> ok;
 tagged_event(_, Event, #state{build_start=silent})          when element(1, Event) =:= build_start          -> ok;
 tagged_event(_, Event, #state{build_completed=silent})      when element(1, Event) =:= build_completed      -> ok;
 tagged_event(_, Event, #state{task_init=silent})            when element(1, Event) =:= task_init            -> ok;
@@ -122,6 +124,10 @@ tagged_event(TagString, {build_warning, BuildId, {configfile, Error, Path}}, #st
   io:format("~n~s(ergo:~p) WARN: Couldn't open config file at '~s' because <~p>.~n", [TagString, BuildId, Path, Error]);
 tagged_event(TagString, {build_warning, BuildId, Warning}, #state{build_warning=report}) ->
   io:format("~n~s(ergo:~p) WARN: ~p~n", [TagString, BuildId, Warning]);
+
+
+tagged_event(TagString, {build_task_done, BuildId, Taskname, Started, Completed}, #state{build_task_done=report}) ->
+  io:format([TagString,build_tag(BuildId),<<"Task ">>,?tn(Taskname),<<" marked done. ">>,?pf(Started - Completed),<<" tasks outstanding (">>,?pf(Started),<<"/">>,?pf(Completed),<<")\n">>]);
 
 tagged_event(TagString, {build_start, Workspace, BuildId, Targets}, #state{build_start=report}) ->
   io:format("~n~s(ergo): build (ergo:~p) targets: ~p starting in:~n   ~s ~n", [TagString, BuildId, Targets, Workspace]);
@@ -148,7 +154,7 @@ tagged_event(TagString, {task_skipped, Bid, {task, TaskName}}, #state{task_skipp
   io:format("~s(ergo:~p):   skipped: ~s ~n", [TagString, Bid, format_task(TaskName)]);
 
 tagged_event(TagString, {task_invalid, Bid, TaskName, Message}, #state{task_invalid=report}) ->
-  io:format([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: \"",Message,"\" ~n"]);
+  io:format([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: ",?tn(Message),"\n"]);
 
 tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task_changed_graph=report}) ->
   io:format("~s(ergo:~p): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);

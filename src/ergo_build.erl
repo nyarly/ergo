@@ -132,11 +132,15 @@ task_changed_graph({task, _Task}, State) ->
 task_completed({task, Task}, State = #state{run_counts= RunCounts, workspace_dir=WorkspaceDir, complete_tasks=PrevCompleteTasks, completed=PrevCplt}) ->
   CompleteTasks = [Task | PrevCompleteTasks],
   ok = ergo_freshness:store(WorkspaceDir, Task),
-  start_tasks(State#state{
+  report_and_start_tasks(Task, State#state{
                completed = PrevCplt + 1,
                complete_tasks=CompleteTasks,
                run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
   }).
+
+report_and_start_tasks(Task, State=#state{workspace_dir=WS, build_id = Id, started=StartCount, completed=CompleteCount}) ->
+  ergo_events:build_notes_task_complete(WS, Id, Task, StartCount, CompleteCount),
+  start_tasks(State).
 
 %XXX(jdl) How is "build_spec empty" =/= "elidible tasks empty"
 %It seems like either this is pure duplication with the start_eligible_tasks, or there's an error case

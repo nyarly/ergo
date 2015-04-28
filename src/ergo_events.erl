@@ -9,7 +9,7 @@
 
 -module(ergo_events).
 
--export([build_requested/2, build_start/3, build_completed/4, build_warning/3,
+-export([build_requested/2, build_start/3, build_completed/4, build_warning/3, build_notes_task_complete/5,
          requirement_noted/3, production_noted/3, disclaimed_production/4, task_generation/3,
          graph_changed/1, graph_contradiction/4, task_init/3, task_started/3,
          task_produced_output/4, task_failed/5, invalid_provenence/5,
@@ -35,6 +35,9 @@ build_completed(Workspace, BuildId, Succeeded, Message) ->
 build_warning(Workspace, BuildId, Warning) ->
   send_event(Workspace, {build_warning, BuildId, Warning}).
 
+-spec(build_notes_task_complete(ergo:workspace_name(), ergo:build_id(), ergo:task(), integer(), integer()) -> ok).
+build_notes_task_complete(Workspace, BuildId, Taskname, Started, Completed) ->
+  send_event(Workspace, {build_task_done, BuildId, Taskname, Started, Completed}).
 
 task_generation(Workspace, BuildId, TaskList) ->
   send_event(Workspace, {task_generation, BuildId, TaskList}).
