@@ -282,6 +282,7 @@ update_batch_id(State=#state{vertices=VerTab}) ->
 
 -record(contradictions, { self, whole }).
 
+-spec(maybe_notify_changed(boolean(), ergo:build_id(), ergo:taskname(), #state{}) -> change_report()).
 maybe_notify_changed(Changed, BuildId, Taskname, State) ->
   maybe_notify_changed(#batch_status{changed=Changed, build_id=BuildId, taskname=Taskname, state=State}).
 

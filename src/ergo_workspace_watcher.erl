@@ -130,13 +130,13 @@ tagged_event(TagString, {build_task_done, BuildId, Taskname, Started, Completed}
   io:format([TagString,build_tag(BuildId),<<"Task ">>,?tn(Taskname),<<" marked done. ">>,?pf(Started - Completed),<<" tasks outstanding (">>,?pf(Started),<<"/">>,?pf(Completed),<<")\n">>]);
 
 tagged_event(TagString, {build_start, Workspace, BuildId, Targets}, #state{build_start=report}) ->
-  io:format("~n~s(ergo): build (ergo:~p) targets: ~p starting in:~n   ~s ~n", [TagString, BuildId, Targets, Workspace]);
+  io:format([TagString,<<"(ergo): build ">>,build_tag(BuildId),<<" targets: ">>,?pf(Targets),<<" starting in:\n  ">>,Workspace,<<"\n">>]);
 
 tagged_event(TagString, {build_completed, BuildId, true, _Msg}, #state{build_completed=report}) ->
-  io:format("~s(ergo:~p): completed successfully.~n", [TagString, BuildId]);
+  io:format("~sBuild (ergo:~p): completed successfully.~n", [TagString, BuildId]);
 
 tagged_event(TagString, {build_completed, BuildId, false, Msg}, #state{build_completed=report}) ->
-  io:format("~s(ergo:~p): exited with a failure.~n  More info: ~p~n", [TagString, BuildId, Msg]);
+  io:format("~sBuild (ergo:~p): exited with a failure.~n  More info: ~p~n", [TagString, BuildId, Msg]);
 
 tagged_event(TagString, {task_init, Bid, {task, TaskName}}, #state{task_init=report}) ->
   io:format("~s(ergo:~p): init:  ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
@@ -166,13 +166,19 @@ tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutS
   io:format("~s(ergo:~p): ~s failed ~p~nOutput:~n~s~n", [TagString, Bid, [[Part, " "] || Part <- TaskName], Exit, OutString]);
 
 tagged_event(TagString, {invalid_provenence, Bid, About, Asserter, Stmt}, #state{invalid_provenence=report}) ->
-  io:format([TagString, build_tag(Bid), <<"Invalid task ">>,format_task(About),<<" drawn into graph by statement: <<">>, format_statement(Stmt),<<">> by ">>,format_task(Asserter),<<"\n">>]);
+  build_tagged_message(TagString, Bid,
+                       [<<"Invalid task ">>,format_task(About),<<" drawn into graph by statement: <<">>,
+                        format_statement(Stmt),<<">> by ">>,format_task(Asserter)]);
 
 tagged_event(TagString, Event, #state{unknown_event=report}) ->
   io:format("~s(ergo:?): ~p~n", [TagString, Event]);
 
 tagged_event(_, _, _) ->
   ok.
+
+
+build_tagged_message(TagString, Bid, IoList) ->
+  io:format([TagString, build_tag(Bid), IoList, <<"\n">>]).
 
 pfmt(Term) ->
   io_lib:format("~p", [Term]).

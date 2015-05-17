@@ -4,6 +4,9 @@
 -type batch_id() :: integer().
 -type normalized_product() :: string().
 
+-type change_report() :: {ok, change_status()} | {err, term()}.
+-type change_status() :: changed | no_change.
+
 -record(task,    { name :: taskname(), command :: [binary()]}).
 -record(product, { name :: productname() }).
 -record(next_id, { kind :: atom(), value :: integer() }).

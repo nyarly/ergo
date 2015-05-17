@@ -1,7 +1,7 @@
 -module(ergo_task).
 -behavior(gen_server).
 %% API
--export([current/0, taskname_from_token/1, start_link/4, task_name/1,
+-export([current/0, taskname_from_token/1, start/4, start_link/4, task_name/1,
          add_dep/4, add_req/4, add_prod/4, add_co/4, add_seq/4, skip/2, invalid/3]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -11,11 +11,13 @@
 
 -define(ERGO_TASK_ENV, "ERGO_TASK_ID").
 
+-type outcome() :: success | skipped | {invalid, term()} | {failed, term(), string()}.
+
 -record(state, {
           workspace,
           build_id,
           name,
-          runspec,
+          config,
           cmdport,
           output=[],
           graphitems=[],
@@ -23,8 +25,12 @@
           invalid=false
          }).
 
-start_link(RunSpec={Taskname, _Cmd, _Arg}, WorkspaceDir, BuildId, Config) ->
-  gen_server:start_link(?VIA(WorkspaceDir, Taskname), ?MODULE, {RunSpec, WorkspaceDir, BuildId, Config}, []).
+start_link(Taskname, WorkspaceDir, BuildId, Config) ->
+  gen_server:start_link(?VIA(WorkspaceDir, Taskname), ?MODULE, {Taskname, WorkspaceDir, BuildId, Config}, []).
+
+%XXX monitor the caller
+start(Taskname, WorkspaceDir, BuildId, Config) ->
+  gen_server:start(?VIA(WorkspaceDir, Taskname), ?MODULE, {Taskname, WorkspaceDir, BuildId, Config}, []).
 
 task_name(TaskServer) ->
   gen_server:call(TaskServer, task_name).
@@ -69,15 +75,14 @@ skip(Workspace, Taskname) ->
 invalid(Workspace, Taskname, Message) ->
   gen_server:call(?VT(Workspace, Taskname), {invalid, Message}).
 
+begin_task(Workspace, Taskname) ->
+  gen_server:cast(?VIA(Workspace, Taskname), begin_task).
 
 %%% gen_server callbacks
 
-init({TaskSpec, WorkspaceDir, BuildId, Config}) ->
-  {TaskName, Command, Args} = TaskSpec,
-  ergo_events:task_init(WorkspaceDir, BuildId, {task, TaskName}),
-  process_flag(trap_exit, true),
-  CmdPort = (catch launch_task(Command, TaskName, Args, WorkspaceDir, Config)),
-  process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec).
+init({TaskName, WorkspaceDir, BuildId, Config}) ->
+  begin_task(WorkspaceDir, TaskName),
+  {ok, #state{workspace=WorkspaceDir, build_id=BuildId, name=TaskName, config=Config}}.
 
 handle_call(task_name, _From, State) ->
   {reply, State#state.name, State};
@@ -99,6 +104,9 @@ handle_call({invalid, Message}, _, State) ->
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
+
+handle_cast(begin_task, State) ->
+  process_launch_result(handle_begin_task(State));
 
 handle_cast(kill, State=#state{cmdport=CmdPort}) ->
   port_close(CmdPort),
@@ -125,15 +133,49 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% Internal functions
 
-process_launch_result({'EXIT', Reason}, WorkspaceDir, BuildId, TaskName, _TS) ->
-  ergo_events:task_failed(WorkspaceDir, BuildId, {task, TaskName}, Reason, []),
-  {stop, Reason};
-process_launch_result(CmdPort, WorkspaceDir, BuildId, TaskName, TaskSpec) ->
-  ergo_events:task_started(WorkspaceDir, BuildId, {task, TaskName}),
-  {ok, #state{workspace=WorkspaceDir, build_id=BuildId, name=TaskName, runspec=TaskSpec, cmdport=CmdPort}}.
+-spec(task_executable([file:name_all()], binary()) -> file:name_all()).
+task_executable(TaskPath, Taskname) ->
+  handle_task_executable(file:path_open([TaskPath], Taskname, [read])).
+
+handle_task_executable({ok, Io, FullPath})->
+  ok = file:close(Io),
+  FullPath;
+handle_task_executable(Error) ->
+  {error, Error}.
 
 
-launch_task(Command, TaskName, Args, Dir, Config) ->
+-record(launch, {
+          fullexe,
+          relname,
+          args,
+          fresh
+         }).
+
+handle_begin_task(State) ->
+  handle_begin_task(#launch{}, State).
+
+handle_begin_task(#launch{fullexe={error, Error}}, _State) ->
+  ergo_task_pool:task_concluded(no_change, {invalid, Error}),
+  {no_such_task, Error};
+handle_begin_task(#launch{fresh=hit}, _State) ->
+  ergo_task_pool:task_concluded(no_change, skipped),
+  skipped;
+
+handle_begin_task(Launch=#launch{fresh=undefined}, State=#state{workspace=WS, name=Task}) ->
+  handle_begin_task(
+    Launch#launch{ fresh=ergo_freshness:check(WS, Task) }, State
+   );
+handle_begin_task(Launch=#launch{relname=undefined}, State=#state{name=[RelName | Args]}) ->
+  handle_begin_task(
+    Launch#launch{ relname=RelName,args=Args }, State
+   );
+handle_begin_task(Launch=#launch{fullexe=undefined,relname=RelName}, State=#state{workspace=WS}) ->
+  handle_begin_task(
+    Launch#launch{ fullexe=task_executable(WS, RelName)}, State
+   );
+
+handle_begin_task(#launch{fullexe=Command, args=Args, fresh=miss},
+                  State=#state{workspace=Dir, name=TaskName, config=Config, cmdport=undefined}) ->
   PortConfig= [
            {arg0, hd(TaskName)},
            {args, Args},
@@ -143,7 +185,14 @@ launch_task(Command, TaskName, Args, Dir, Config) ->
            use_stdio,
            stderr_to_stdout
           ],
-  open_port( {spawn_executable, Command}, PortConfig).
+  State#state{cmdport=(catch open_port( {spawn_executable, Command}, PortConfig))}.
+
+process_launch_result(State=#state{cmdport={'EXIT', Reason}}) ->
+  ergo_task_pool:task_concluded(no_change, {failed, Reason, []}),
+  {stop, Reason, State};
+process_launch_result(State) ->
+  {noreply, State}.
+
 
 add_item(State=#state{graphitems=GraphItems}, Item) ->
   State#state{graphitems=[Item | GraphItems]}.
@@ -151,13 +200,13 @@ add_item(State=#state{graphitems=GraphItems}, Item) ->
 kill_self(#state{workspace=WS,name=T}) ->
   gen_server:cast(?VT(WS, T), kill).
 
-skipped(State=#state{workspace=Workspace,build_id=BuildId, name=Name}) ->
-  ergo_events:task_skipped(Workspace, BuildId, {task, Name}),
+skipped(State) ->
+  ergo_task_pool:task_concluded(no_change, skipped),
   kill_self(State),
   State#state{skipped=true}.
 
-become_invalid(Message, State=#state{workspace=Workspace, build_id=BuildId, name=Name}) ->
-  ergo_events:task_invalid(Workspace, BuildId, Name, Message),
+become_invalid(Message, State) ->
+  ergo_task_pool:task_concluded(no_change, {invalid, Message}),
   kill_self(State),
   State#state{invalid=true}.
 
@@ -191,24 +240,14 @@ exit_status(Status, State) ->
   record_batch({err, {exit_status, Status}}, State).
 
 
-record_batch(_, State=#state{invalid=true, workspace=Workspace, build_id=BuildId, name=Name}) ->
-  ergo_graphs:task_invalid(Workspace, BuildId, Name),
-  record_and_report({err, invalid}, State);
-record_batch(_, State=#state{skipped=true}) ->
-  record_and_report({ok, no_change}, State#state{graphitems=[]});
-record_batch(ok, State=#state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph}) ->
-  Changed = ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, true),
-  record_and_report(Changed, State);
-record_batch(Error, State=#state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph}) ->
-  case ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, false) of
-    {ok, changed} -> record_and_report({ok, changed}, State);
-    _ -> record_and_report(Error, State)
-  end.
-
-
-record_and_report({err, Error}, #state{output=Output, build_id=BuildId, name=Name, workspace=Workspace}) ->
-  ergo_events:task_failed(Workspace, BuildId, {task, Name}, Error, {output,lists:flatten(lists:reverse(Output))});
-record_and_report({ok, changed}, #state{workspace=Workspace, build_id=BuildId, name=Name}) ->
-  ergo_events:task_changed_graph(Workspace, BuildId, {task, Name});
-record_and_report({ok, no_change }, #state{workspace=Workspace, build_id=BuildId, name=Name}) ->
-  ergo_events:task_completed(Workspace, BuildId, {task, Name}).
+record_batch(_, #state{invalid=true}) ->
+  ok;
+record_batch(_, #state{skipped=true}) ->
+  ergo_task_pool:task_concluded(no_change, skipped);
+record_batch(ok, #state{workspace=WS, build_id=Bid, name=Name, graphitems=Graph}) ->
+  ergo_freshness:store(WS, Name),
+  {ok, Changed} = ergo_graphs:task_batch(WS, Bid, Name, Graph, true),
+  ergo_task_pool:task_concluded(Changed, success);
+record_batch(Error, #state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph, output=Output}) ->
+  {ok, Changed} = ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, false),
+  ergo_task_pool:task_concluded(Changed, {failed, Error, lists:flatten(lists:reverse(Output))}).

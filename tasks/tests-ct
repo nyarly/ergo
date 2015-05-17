@@ -21,7 +21,7 @@ ergo-taskfile --produces test/${SUITE_NAME}_SUITE.beam --task tasks/build-ct-sui
 ergo-taskfile --produces $RESULTS
 
 test -d "test"
-mkdir -p logs/
+mkdir -p $(dirname $RESULTS)
 echo -n > $RESULTS
 ct_run \
   -no_auto_compile -noshell \
