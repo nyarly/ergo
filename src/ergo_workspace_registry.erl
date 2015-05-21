@@ -5,7 +5,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, link_to/1, name_from_id/1, id_from_name/1]).
 
--export([register_name/2, unregister_name/1, whereis_name/1, send/2, normalize_name/1]).
+-export([register_name/2, unregister_name/1, whereis_name/1, whois_pid/1, send/2, normalize_name/1]).
 
 -type(roletype() :: supervisor | build | server | graph | events).
 -define(SERVER, ?MODULE).
@@ -24,6 +24,9 @@ unregister_name({Workspace,Role,Name}) ->
 
 whereis_name({Workspace,Role,Name}) ->
   gen_server:call(?SERVER, {whereis_name, reg_key_for(Workspace,Role,Name)}).
+
+whois_pid(Pid) ->
+  gen_server:call(?SERVER, {whois_pid, Pid}).
 
 send({Workspace,Role,Name}, Message) ->
   gen_server:call(?SERVER, {send, reg_key_for(Workspace,Role,Name), Message}).
@@ -52,6 +55,8 @@ handle_call({unregister_name, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, unreg_name(RegKey, RegTab), State};
 handle_call({whereis_name, RegKey}, _From, State=#state{registry=RegTab}) ->
   {reply, lookup(RegKey, RegTab), State};
+handle_call({whois_pid, Pid}, _From, State=#state{registry=RegTab}) ->
+  {reply, whois_pid(Pid, RegTab), State};
 handle_call({send, RegKey, Message}, _From, State=#state{registry=RegTab}) ->
   {reply, send(RegKey, Message, RegTab), State};
 handle_call({process_id, RegKey}, _From, State=#state{registry=RegTab}) ->
@@ -103,10 +108,18 @@ register_response(_, #registration{monref=MonRef}) ->
 
 lost_pid(MonRef, Pid, #state{registry=RegTab}) ->
   demonitor(MonRef),
-  unreg_name(name_for_pid(Pid, RegTab), RegTab),
+  unreg_name(key_for_pid(Pid, RegTab), RegTab),
   ok.
 
-name_for_pid(Pid, RegTab) ->
+whois_pid(Pid, RegTab) ->
+  key_to_name(key_for_pid(Pid, RegTab)).
+
+key_to_name(#registry_key{workspace=WS, role=R, name=N}) ->
+  {WS, R, N};
+key_to_name(unknown_pid) ->
+  unknown_pid.
+
+key_for_pid(Pid, RegTab) ->
   case ets:match_object(RegTab, #registration{pid=Pid, _='_'}) of
     [#registration{key=Key}|_Rest] -> Key;
     _ -> unknown_pid

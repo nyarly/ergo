@@ -11,7 +11,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3,
-         register_build/2, start_task/4, scrub_build/1, task_concluded/2
+         register_build/2, start_task/4, scrub_build/0, task_concluded/2
         ]).
 -define(SERVER, ?MODULE).
 
@@ -49,8 +49,8 @@ start_link() ->
 register_build(WS, Bid) ->
   gen_server:call(?SERVER, {register_build, WS, Bid}).
 
-scrub_build(Bid) ->
-  gen_server:call(?SERVER, {scrub_pending, Bid}).
+scrub_build() ->
+  gen_server:cast(?SERVER, {scrub_pending, self()}).
 
 start_task(WS, Bid, Task, Config) ->
   gen_server:call(?SERVER, {start_task, WS, Bid, Task, Config}).
@@ -76,15 +76,13 @@ handle_call({start_task, WS, Bid, Task, Config}, _From, State) ->
 handle_call({register_build, WS, Bid}, {Pid, _}, State) ->
   NewState = register_build(WS, Bid, Pid, State),
   {reply, ok, NewState};
-handle_call({scrub_pending, Bid}, _From, State) ->
-  NewState = scrub_pending_for_build(Bid, State),
-  {reply, ok, NewState};
-
 handle_call({task_concluded, GraphChange, Outcome}, {Pid, _}, State) ->
   {reply, ok, record_task_conclusion(Pid, GraphChange, Outcome, State)};
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
+handle_cast({scrub_pending, Pid}, State) ->
+  {noreply, scrub_pending_for_pid(Pid, State)};
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
@@ -119,20 +117,28 @@ handle_down_monitor(Ref, Who, Info, State) ->
   monitored_process_exited(mon_type(Ref, State), Ref, Who, Info, State).
 
 monitored_process_exited(worker, Ref, Who, Info, State) ->
-  report_task_complete(Who, Info, State),
-  check_queue(remove_worker(Who, Ref, State));
+  Task = task_by_pid(Who, State),
+  ExitedState = remove_worker(Who, Ref, State),
+  report_task_complete(Task, Info, ExitedState),
+  check_queue(ExitedState);
 monitored_process_exited(build, Ref, Who, Info, State) ->
   report_build_exited(Who, Info, State),
   build_exited(Ref, State).
 
-report_task_complete(Pid, _Info, State) ->
-  Task = task_by_pid(Pid, State),
+report_task_complete(Task, _Info, State) ->
   notify_build(Task, State),
   report_task_conclusion(Task).
+
+scrub_pending_for_pid(Pid, State) ->
+  {WS, Bid} = get_build_from_pid(Pid),
+  scrub_pending_for_build(WS, Bid, State).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %  Functions with direct external calls  %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+get_build_from_pid(Pid) ->
+  {WS, build, Bid} = ergo_workspace_registry:whois_pid(Pid), {WS, Bid}.
 
 report_queued_task(#task{workspace=WS, build_id=Bid, task=T}) ->
   ergo_events:task_init(WS, Bid, {task, T}).
@@ -160,11 +166,11 @@ report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome=success
   ergo_events:task_completed(WS, Bid, {task, T});
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome=success, graph_status=no_change}) ->
   ergo_events:task_completed(WS, Bid, {task, T});
-report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={fail, Reason, Output}, graph_status=changed}) ->
+report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={failed, Reason, Output}, graph_status=changed}) ->
   ergo_events:task_changed_graph(WS, Bid, {task, T}),
-  ergo_events:task_failed(WS, Bid, {task, T}, Reason, Output);
-report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={fail, Reason, Output}, graph_status=no_change}) ->
-  ergo_events:task_failed(WS, Bid, {task, T}, Reason, Output);
+  ergo_events:task_failed(WS, Bid, {task, T}, Reason, {output, Output});
+report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={failed, Reason, Output}, graph_status=no_change}) ->
+  ergo_events:task_failed(WS, Bid, {task, T}, Reason, {output, Output});
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome=skipped}) ->
   ergo_events:task_skipped(WS, Bid, {task, T});
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={invalid, Message}}) ->
@@ -238,14 +244,14 @@ build_exited(Ref, State=#state{build_monitors=Bs}) ->
   scrub_dead_build(Ref, State#state{build_monitors=sets:del_element(Ref, Bs)}).
 
 scrub_dead_build(Ref, State=#state{builds=Ids}) ->
-  #build{build_id=DeadId} = dict:fetch(Ref, Ids),
-  scrub_pending_for_build(DeadId, State).
+  #build{workspace=WS, build_id=DeadId} = dict:fetch(Ref, Ids),
+  scrub_pending_for_build(WS, DeadId, State).
 
-scrub_pending_for_build(Bid, State=#state{waiting=Q}) ->
-  State#state{waiting=scrub_build(Bid, Q)}.
+scrub_pending_for_build(WS, Bid, State=#state{waiting=Q}) ->
+  State#state{waiting=scrub_build(WS, Bid, Q)}.
 
-scrub_build(Bid, Q) ->
-  queue:filter(fun(#task{build_id=Id}) when Id =:= Bid -> false;
+scrub_build(WS, Bid, Q) ->
+  queue:filter(fun(#task{workspace=W, build_id=Id}) when Id =:= Bid andalso W=:=WS -> false;
                   (_) -> true
                end, Q).
 
@@ -285,7 +291,7 @@ module_test_() ->
         {"Record task conclusion",
          ?_test(begin
                   TRef = make_ref(),
-                  {RunList, NewState} = pop_runnable_jobs(queue_task(ATask, State)),
+                  {_, NewState} = pop_runnable_jobs(queue_task(ATask, State)),
                   RunState = record_running(fake_pid, TRef, ATask, NewState),
                   ConcludeState = record_task_conclusion(fake_pid, changed, success, RunState),
                   DoneTask = task_by_pid(fake_pid, ConcludeState),

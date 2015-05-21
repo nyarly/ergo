@@ -25,18 +25,23 @@
 -define(ID(Workspace, Id), {?MODULE, {ergo_workspace_registry:normalize_name(Workspace), Id}}).
 -define(RUN_LIMIT,20).
 
+-define(NOTEST, true).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %%%===================================================================
 %%% Module API
 %%%===================================================================
 
 -spec start(ergo:workspace_name(), integer(), [ergo:target()]) -> ok.
 start(Workspace, BuildId, Targets) ->
-  gen_server:start(?VIA(Workspace, BuildId), ?MODULE, {Workspace, BuildId, Targets}),
+  gen_server:start(?VIA(Workspace, BuildId), ?MODULE, {Workspace, BuildId, Targets}, []),
   gen_server:call(?VIA(Workspace, BuildId), {build_start, Workspace, BuildId, something}).
 
 
 task_exited(Workspace, BuildId, Task, GraphChanged, Outcome, Remaining) ->
-  gen_server:call(?VIA(Workspace, BuildId), {task_exit, Task, GraphChanged, Outcome, Remaining}).
+  gen_server:cast(?VIA(Workspace, BuildId), {task_exit, Task, GraphChanged, Outcome, Remaining}).
 
 
 link_to(Workspace, Id, _) ->
@@ -78,10 +83,6 @@ init({WorkspaceName, BuildId, Targets}) ->
 handle_call({build_start, WorkspaceName, BuildId, _}, _From, OldState=#state{build_id=BuildId,workspace_dir=WorkspaceName}) ->
   State = load_config(OldState),
   {reply, ok, start_tasks(0, State)};
-handle_call({task_exit, Task, GraphChange, Outcome, Remaining}, _From, State) ->
-  NewState = handle_task_exited( Task, Outcome, Remaining,
-                                 handle_graph_changes(GraphChange, State)),
-  {reply, ok, NewState};
 
 
 %XXX needs to be a cast?
@@ -91,6 +92,10 @@ handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
 
+handle_cast({task_exit, Task, GraphChange, Outcome, Remaining}, State) ->
+  {noreply,
+   handle_task_exited( Task, GraphChange, Outcome, Remaining,
+                       handle_graph_changes(GraphChange, State)) };
 handle_cast(_Request, State) ->
   {noreply, State}.
 
@@ -126,26 +131,27 @@ config_into_state({error, Error}, State=#state{build_id=BuildId, workspace_dir=W
 config_into_state({ok, Config}, State) ->
   State#state{config=Config}.
 
-handle_graph_changes(changed, State=#state{build_id=Bid}) ->
-  ergo_task_pool:scrub_pending(Bid),
+handle_graph_changes(changed, State) ->
+  ergo_task_pool:scrub_build(),
   State#state{build_spec=out_of_date};
 handle_graph_changes(no_change, State) ->
   State.
 
-handle_task_exited(_Task, {failed, Reason, _Output}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
+handle_task_exited(_Task, no_change, {failed, Reason, _Output}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
   build_completed(WS, Bid, false, {task_failed, Reason}),
   State;
-handle_task_exited(_Task, {invalid, Message}, _R, State=#state{workspace_dir=WS, build_id=Bid}) ->
+handle_task_exited(_Task, _, {invalid, Message}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
   build_completed(WS, Bid, false, {task_invalid, Message}),
   State;
-handle_task_exited(Task, _, Remaining, State) ->
+handle_task_exited(Task, _, _, Remaining, State) ->
   task_completed(Task, Remaining, State).
 
-task_completed(Task, Waiting, State = #state{run_counts= RunCounts, complete_tasks=CompleteTasks}) ->
+task_completed(Task, Waiting, State = #state{build_spec=BSpec, run_counts= RunCounts, complete_tasks=CompleteTasks}) ->
   start_tasks(Waiting, State#state{
-               complete_tasks=[Task | CompleteTasks],
-               run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
-  }).
+                         build_spec=reduce_build_spec(Task, BSpec),
+                         complete_tasks=[Task | CompleteTasks],
+                         run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
+                        }).
 
 -spec(start_tasks(integer(), #state{}) -> ok | {err, term()}).
 start_tasks(0, State=#state{workspace_dir=WorkspaceDir, build_spec=[], build_id=BuildId}) ->
@@ -160,16 +166,25 @@ start_tasks(0, State=#state{build_spec=out_of_date, workspace_dir=Workspace, req
 start_tasks(_, State=#state{build_spec=out_of_date}) ->
   State;
 
-start_tasks(_, State=#state{build_spec=BuildSpec, complete_tasks=CompleteTasks}) ->
-  Eligible = eligible_tasks(BuildSpec, CompleteTasks),
-  start_eligible_tasks(Eligible, State),
+start_tasks(_, State=#state{build_spec=BuildSpec}) ->
+  Eligible = eligible_tasks(BuildSpec),
+  start_eligible_tasks(Eligible, State).
+
+start_eligible_tasks([], State) ->
+  State;
+start_eligible_tasks(TaskList, State=#state{workspace_dir=WorkspaceDir, build_id=BuildId, config=Config, run_counts=RunCounts}) ->
+  ergo_events:task_generation(WorkspaceDir, BuildId, TaskList),
+  lists:foldl(fun(Task, St) ->
+                  process_start_result(
+                    start_task(WorkspaceDir, BuildId, Task, Config, run_count(Task, RunCounts)),
+                    Task, St)
+              end, State, TaskList).
+
+process_start_result(ok, Task, State=#state{build_spec=Spec}) ->
+  State#state{build_spec=remove_started_task(Task, Spec)};
+process_start_result(_, _, State) ->
   State.
 
-start_eligible_tasks([], _) ->
-  ok;
-start_eligible_tasks(TaskList, #state{workspace_dir=WorkspaceDir, build_id=BuildId, config=Config, run_counts=RunCounts}) ->
-  ergo_events:task_generation(WorkspaceDir, BuildId, TaskList),
-  [ start_task(WorkspaceDir, BuildId, Task, Config, RunCounts) || Task <- TaskList ].
 
 
 run_count(Task, RunCounts) ->
@@ -178,35 +193,72 @@ run_count(Task, RunCounts) ->
     error -> 0
   end.
 
--record(task_config,
-        {
-         workspace,
-         build_id,
-         task,
-         taskconfig,
-         runlimit=?RUN_LIMIT,
-         runcounts,
-         runcount
-        }).
-
-start_task(Workspace, BuildId, Task, Config, RunCounts) ->
-  start_task(#task_config{workspace=Workspace, build_id=BuildId, task=Task, taskconfig=Config, runcount=run_count(Task,RunCounts)}).
-
-start_task(#task_config{task=Task,workspace=Workspace,build_id=BuildId,runcount=RC,runlimit=RL}) when RC >= RL ->
-  Error={too_many_repetitions, Task, RC},
+start_task(Workspace, BuildId, Task, _, RunCounts) when RunCounts >= ?RUN_LIMIT ->
+  Error={too_many_repetitions, Task, RunCounts, ?RUN_LIMIT},
   ergo_events:task_failed(Workspace, BuildId, {task, Task}, Error, []),
   {err, Error};
-start_task(#task_config{workspace=Workspace, build_id=BuildId, task=Task, taskconfig=Config}) ->
+start_task(Workspace, BuildId, Task, Config, _) ->
   ergo_task_pool:start_task(Workspace, BuildId, Task, Config).
 
-eligible_tasks(BuildSpec, CompleteTasks) ->
-  lists:subtract(
-    [ Task || { Task, Predecessors } <- BuildSpec,
-      length(complete(Predecessors, CompleteTasks)) =:= length(Predecessors) ],
-    CompleteTasks
-  ).
+eligible_tasks(BuildSpec) ->
+  [Task || {Task, []} <- BuildSpec].
 
-complete(_TaskList, []) ->
-  [];
-complete(TaskList, CompleteTasks) ->
-  [ Task || Task <- TaskList, CompleteTask <- CompleteTasks, Task =:= CompleteTask ].
+remove_started_task(_, out_of_date) ->
+  out_of_date;
+remove_started_task(Task, Spec) ->
+  [{TN, Deps} || {TN, Deps} <- Spec, TN =/=Task].
+
+reduce_build_spec(_, out_of_date) ->
+  out_of_date;
+reduce_build_spec(Task, Spec) ->
+  [ {TN, Deps -- [Task]} || {TN, Deps} <- Spec, TN =/= Task].
+
+-ifdef(TEST).
+module_test_() ->
+  % convenience variables
+  {
+    foreach,
+    fun() ->  %setup
+      dbg:tracer(),
+      dbg:p(all, c),
+      ok
+    end,
+    fun(_State) -> %teardown
+      dbg:ctp(), dbg:p(all, clear),
+      ok
+  end,
+  [
+   fun(_) ->
+     {"Eligible tasks",
+     ?_test(begin
+              ?assertEqual([ready], eligible_tasks([{ready, []}, {not_ready, [ready]}, {also_not, [other]}]))
+       end)
+     }
+   end,
+   fun(State) ->
+     {"Remove started tasks",
+     ?_test(begin
+       ?assertEqual(remove_started_task(started, [{started, []}, {not_ready, [started]}]),
+                    [{not_ready, [started]}])
+       end)
+     }
+   end,
+
+
+   fun(_) ->
+     {"Spec reduction should handle out_of_date spec",
+     ?_test(begin
+              ?assertEqual(out_of_date, reduce_build_spec(any_task, out_of_date))
+       end)
+     }
+   end,
+   fun(_) ->
+       {"Spec reduction should remove a completed task",
+        ?_test(begin
+                 Reduced = reduce_build_spec(done_task, [{done_task, []}, {other_task, [done_task]}, {last_task, [other_task, done_task]}]),
+                 ?assertMatch( Reduced, [{other_task, []}, {last_task, [other_task]}])
+               end)
+       }
+   end
+  ]}.
+-endif.

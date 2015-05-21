@@ -28,7 +28,6 @@
 start_link(Taskname, WorkspaceDir, BuildId, Config) ->
   gen_server:start_link(?VIA(WorkspaceDir, Taskname), ?MODULE, {Taskname, WorkspaceDir, BuildId, Config}, []).
 
-%XXX monitor the caller
 start(Taskname, WorkspaceDir, BuildId, Config) ->
   gen_server:start(?VIA(WorkspaceDir, Taskname), ?MODULE, {Taskname, WorkspaceDir, BuildId, Config}, []).
 
@@ -105,20 +104,23 @@ handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
 
+
+
 handle_cast(begin_task, State) ->
   process_launch_result(handle_begin_task(State));
-
 handle_cast(kill, State=#state{cmdport=CmdPort}) ->
   port_close(CmdPort),
   {noreply, State};
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
+
+
 handle_info({CmdPort, {data, Data}}, State=#state{cmdport=CmdPort}) ->
   {noreply, received_data(State, Data)};
 handle_info({_CmdPort, {exit_status, Status}}, State) ->
   exit_status(Status, State),
-  {noreply, State};
+  {stop, normal, State};
 handle_info({'EXIT', CmdPort, ExitReason}, State=#state{cmdport=CmdPort}) ->
   exited(ExitReason, State),
   {stop, normal, State};
@@ -154,8 +156,8 @@ handle_task_executable(Error) ->
 handle_begin_task(State) ->
   handle_begin_task(#launch{}, State).
 
-handle_begin_task(#launch{fullexe={error, Error}}, _State) ->
-  ergo_task_pool:task_concluded(no_change, {invalid, Error}),
+handle_begin_task(#launch{fullexe={error, Error}}, State) ->
+  report_invalid(Error, State),
   {no_such_task, Error};
 handle_begin_task(#launch{fresh=hit}, _State) ->
   ergo_task_pool:task_concluded(no_change, skipped),
@@ -190,8 +192,13 @@ handle_begin_task(#launch{fullexe=Command, args=Args, fresh=miss},
 process_launch_result(State=#state{cmdport={'EXIT', Reason}}) ->
   ergo_task_pool:task_concluded(no_change, {failed, Reason, []}),
   {stop, Reason, State};
-process_launch_result(State) ->
-  {noreply, State}.
+process_launch_result(State=#state{}) ->
+  {noreply, State};
+process_launch_result(skipped) ->
+  {stop, normal, #state{}};
+process_launch_result(Reason) ->
+  {stop, Reason, #state{}}.
+
 
 
 add_item(State=#state{graphitems=GraphItems}, Item) ->
@@ -205,8 +212,14 @@ skipped(State) ->
   kill_self(State),
   State#state{skipped=true}.
 
-become_invalid(Message, State) ->
+report_invalid(Message, State=#state{workspace=WS, build_id=B, name=Task}) ->
   ergo_task_pool:task_concluded(no_change, {invalid, Message}),
+  ergo_graphs:task_invalid(WS, B, Task),
+  State.
+
+
+become_invalid(Message, State) ->
+  report_invalid(Message, State),
   kill_self(State),
   State#state{invalid=true}.
 

@@ -18,7 +18,8 @@ init([]) ->
   Procs = [
            supervised(server, ergo_server),
            supervised(registry, ergo_workspace_registry),
-           supervised(tasks, ergo_tasks_soop, supervisor)
+           %supervised(tasks, ergo_tasks_soop, supervisor)
+           supervised(tasks, ergo_task_pool)
           ],
   {ok, {{one_for_one, 1, 5}, Procs}}.
 
