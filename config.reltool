@@ -16,6 +16,7 @@
       {app,wx,[{incl_cond,exclude}]},
       {boot_rel,"ergo"},
       {rel,"ergo","0.1.0",[ergo,{mnesia,load}]},
-      {rel,"start_sasl","0.1.0",[sasl,ergo]},
+      {rel,"start_clean","0.1.0",[ergo,{mnesia,load}]},
+      {rel,"start_sasl","0.1.0",[sasl,ergo,{mnesia,load}]},
       {excl_app_filters,[".*riak.*",".*tsung.*"]}
       ]}.

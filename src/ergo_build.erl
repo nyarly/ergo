@@ -62,7 +62,7 @@ check_alive(Workspace, Id) ->
 
 build_completed(Workspace, BuildId, Success, Message) ->
   ergo_events:build_completed(Workspace, BuildId, Success, Message),
-  gen_server:call(?VIA(Workspace, BuildId), {build_completed}).
+  gen_server:cast(?VIA(Workspace, BuildId), {build_completed}).
 
 %%%===================================================================
 %%% gen_event callbacks
@@ -86,12 +86,12 @@ handle_call({build_start, WorkspaceName, BuildId, _}, _From, OldState=#state{bui
 
 
 %XXX needs to be a cast?
-handle_call({build_completed}, _From, State) ->
-  {stop, complete, ok, State};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
 
+handle_cast({build_completed}, State) ->
+  {stop, complete, State};
 handle_cast({task_exit, Task, GraphChange, Outcome, Remaining}, State) ->
   {noreply,
    handle_task_exited( Task, GraphChange, Outcome, Remaining,
