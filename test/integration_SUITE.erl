@@ -73,7 +73,7 @@ groups() ->
   [].
 
 all() ->
-  [root_task, two_tasks, invalid_task].
+  [root_task, two_tasks, invalid_task, missing_script].
 
 %%--
 %% HELPERS
@@ -207,7 +207,8 @@ invalid_task(Config) ->
   ergo:watch(Workspace),
   {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
   ergo_api:wait_on_build(Workspace, Id),
-  %build should fail, without change to project...
+
+  %XXX build should fail, without change to project...
   %match_dir([PrivDir, "invalid_task/project"], Workspace),
   %fix it...
   copy_file([PrivDir, "invalid_task/fixed/tasks/two"], [PrivDir, "invalid_task/project/tasks/two"]),
@@ -217,6 +218,27 @@ invalid_task(Config) ->
   ergo_api:wait_on_build(Workspace, Id2),
   match_dir([PrivDir, "invalid_task/result"], Workspace),
   ok.
+
+missing_script() ->
+  [].
+missing_script(Config) ->
+  PrivDir = proplists:get_value(priv_dir, Config),
+  Workspace = [PrivDir, "missing_script/project"],
+  ergo:watch(Workspace),
+  {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo_api:wait_on_build(Workspace, Id),
+
+  %XXX build should fail, without change to project...
+  %match_dir([PrivDir, "missing_script/project"], Workspace),
+  %fix it...
+  copy_file([PrivDir, "missing_script/fixed/tasks/one"], [PrivDir, "missing_script/project/tasks/one"]),
+  ct:pal("Fixed build tasks - re-running"),
+  %and try again
+  {ok, {build_id, Id2}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo_api:wait_on_build(Workspace, Id2),
+  match_dir([PrivDir, "missing_script/result"], Workspace),
+  ok.
+
 
 
 %%% Needed test cases:

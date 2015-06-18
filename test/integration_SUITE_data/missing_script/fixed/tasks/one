@@ -1,0 +1,12 @@
+#!/bin/bash
+set -x
+
+if [ $# -lt 1 ]; then
+  ergo-task-invalid Need a target file
+  exit 1
+fi
+
+ergo-taskfile -r in.txt
+ergo-taskfile -p $1
+
+cp in.txt $1

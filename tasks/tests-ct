@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -ex
 
-SUITE_NAME=${1:?Missing argument 1(the suite to build)}
+SUITE_NAME=${1:?Missing argument 1(the suite to test)}
 DEPS_DIR=deps
 CT_OPTS=
 SUITE=${SUITE_NAME}_SUITE

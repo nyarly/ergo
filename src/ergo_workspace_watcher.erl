@@ -154,7 +154,7 @@ tagged_event(TagString, {task_skipped, Bid, {task, TaskName}}, #state{task_skipp
   io:format("~s(ergo:~p):   skipped: ~s ~n", [TagString, Bid, format_task(TaskName)]);
 
 tagged_event(TagString, {task_invalid, Bid, TaskName, Message}, #state{task_invalid=report}) ->
-  io:format([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: ",?tn(Message),"\n"]);
+  io:format([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: ",?pf(Message),"\n"]);
 
 tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task_changed_graph=report}) ->
   io:format("~s(ergo:~p): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);

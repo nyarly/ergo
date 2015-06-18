@@ -170,6 +170,8 @@ start_tasks(_, State=#state{build_spec=BuildSpec}) ->
   Eligible = eligible_tasks(BuildSpec),
   start_eligible_tasks(Eligible, State).
 
+start_eligible_tasks([], State=#state{build_spec=[]}) ->
+  State;
 start_eligible_tasks([], State) ->
   State;
 start_eligible_tasks(TaskList, State=#state{workspace_dir=WorkspaceDir, build_id=BuildId, config=Config, run_counts=RunCounts}) ->
