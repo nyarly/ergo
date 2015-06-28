@@ -1,16 +1,58 @@
 #!/usr/bin/env bash
+
+# This was the old approach - idea was to run whichever of the test suites had changed.
+# But: two CTs at the same time caused problems. Probably solveable...
+#set -ex
+#
+#ergo-taskfile --requires tasks/rosters/suite_names.txt
+#ergo-taskfile --produces tasks/rosters/suite_names.txt --task tasks/suite-roster
+#SUITE_NAMES=$(< rosters/suite_names.txt)
+#
+#for f in $SUITE_NAMES; do
+#  ergo-taskfile --requires log/results/$f
+#  ergo-taskfile --produces log/results/$f --task tasks/tests-ct $f
+#done
+#
+#for f in $SUITE_NAMES; do
+#  test -f log/results/$f
+#  tail -n 1 log/results/$f | grep -v failed
+#done
+#
+
 set -ex
 
 ergo-taskfile --requires tasks/rosters/suite_names.txt
 ergo-taskfile --produces tasks/rosters/suite_names.txt --task tasks/suite-roster
 SUITE_NAMES=$(< rosters/suite_names.txt)
 
-for f in $SUITE_NAMES; do
-  ergo-taskfile --requires log/results/$f
-  ergo-taskfile --produces log/results/$f --task tasks/tests-ct $f
+#SUITE_NAME=${1:?Missing argument 1(the suite to test)}
+DEPS_DIR=deps
+CT_OPTS=
+RESULTS=log/results/common_test
+
+#ergo-dep -af tasks/deps
+#ergo-dep -af tasks/build-ct-suites
+
+ergo-taskfile --requires ebin/${PROJECT}.app
+ergo-taskfile --produces ebin/${PROJECT}.app --task tasks/app
+
+ergo-dep -af tasks/requires-all-compiled $0 "$@"
+
+for suite_name in ${SUITE_NAMES}; do
+  ergo-taskfile --requires test/${suite_name}_SUITE.beam
+  ergo-taskfile --produces test/${suite_name}_SUITE.beam --task tasks/build-ct-suite ${suite_name}
 done
 
-for f in $SUITE_NAMES; do
-  test -f log/results/$f
-  tail -n 1 log/results/$f | grep -v failed
-done
+ergo-taskfile --produces $RESULTS
+
+unset  ERGO_NODE ERGO_TASK_ID ERGO_WORKSPACE
+env | grep -i ergo
+
+test -d "test"
+mkdir -p $(dirname $RESULTS)
+echo -n > $RESULTS
+ct_run \
+  -no_auto_compile -noshell \
+  -pa $(realpath ebin) ${DEPS_DIR}/*/ebin \
+  -dir test -logdir logs \
+  ${CT_OPTS} 2>&1 > $RESULTS

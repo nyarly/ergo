@@ -11,21 +11,22 @@
 
 -record(state, {
           tag,
-          graph_changed        = silent,
+           graph_changed        = silent,
           build_warning        = report,
           build_start          = report,
           build_completed      = report,
           build_task_done      = report,
           task_generation      = report,
-          task_init            = silent,
+           task_init            = silent,
           task_started         = report,
-          task_completed       = silent,
+           task_completed       = silent,
           task_skipped         = report,
           task_invalid         = report,
           task_changed_graph   = report,
-          task_produced_output = silent,
+           task_produced_output = silent,
           task_failed          = report,
           invalid_provenence   = report,
+          disclaimed_production= report,
           unknown_event        = report
          }).
 
@@ -100,22 +101,23 @@ format_event(State=#state{tag=none}, Event) ->
 format_event(State=#state{tag=Tag},  Event) ->
   tagged_event(["[",Tag,"] "], Event, State).
 
-tagged_event(_, Event, #state{graph_changed=silent})        when element(1, Event) =:= graph_changed        -> ok;
-tagged_event(_, Event, #state{build_warning=silent})        when element(1, Event) =:= build_warning        -> ok;
-tagged_event(_, Event, #state{build_task_done=silent})      when element(1, Event) =:= build_task_done      -> ok;
-tagged_event(_, Event, #state{build_start=silent})          when element(1, Event) =:= build_start          -> ok;
-tagged_event(_, Event, #state{build_completed=silent})      when element(1, Event) =:= build_completed      -> ok;
-tagged_event(_, Event, #state{task_init=silent})            when element(1, Event) =:= task_init            -> ok;
-tagged_event(_, Event, #state{task_generation=silent})      when element(1, Event) =:= task_generation      -> ok;
-tagged_event(_, Event, #state{task_started=silent})         when element(1, Event) =:= task_started         -> ok;
-tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
-tagged_event(_, Event, #state{task_skipped=silent})         when element(1, Event) =:= task_skipped         -> ok;
-tagged_event(_, Event, #state{task_invalid=silent})         when element(1, Event) =:= task_invalid         -> ok;
-tagged_event(_, Event, #state{task_completed=silent})       when element(1, Event) =:= task_completed       -> ok;
-tagged_event(_, Event, #state{task_changed_graph=silent})   when element(1, Event) =:= task_changed_graph   -> ok;
-tagged_event(_, Event, #state{task_produced_output=silent}) when element(1, Event) =:= task_produced_output -> ok;
-tagged_event(_, Event, #state{task_failed=silent})          when element(1, Event) =:= task_failed          -> ok;
-tagged_event(_, Event, #state{invalid_provenence=silent})   when element(1, Event) =:= invalid_provenence   -> ok;
+tagged_event(_, Event, #state{graph_changed=silent})         when element(1, Event) =:= graph_changed         -> ok;
+tagged_event(_, Event, #state{build_warning=silent})         when element(1, Event) =:= build_warning         -> ok;
+tagged_event(_, Event, #state{build_task_done=silent})       when element(1, Event) =:= build_task_done       -> ok;
+tagged_event(_, Event, #state{build_start=silent})           when element(1, Event) =:= build_start           -> ok;
+tagged_event(_, Event, #state{build_completed=silent})       when element(1, Event) =:= build_completed       -> ok;
+tagged_event(_, Event, #state{task_init=silent})             when element(1, Event) =:= task_init             -> ok;
+tagged_event(_, Event, #state{task_generation=silent})       when element(1, Event) =:= task_generation       -> ok;
+tagged_event(_, Event, #state{task_started=silent})          when element(1, Event) =:= task_started          -> ok;
+tagged_event(_, Event, #state{task_completed=silent})        when element(1, Event) =:= task_completed        -> ok;
+tagged_event(_, Event, #state{task_skipped=silent})          when element(1, Event) =:= task_skipped          -> ok;
+tagged_event(_, Event, #state{task_invalid=silent})          when element(1, Event) =:= task_invalid          -> ok;
+tagged_event(_, Event, #state{task_completed=silent})        when element(1, Event) =:= task_completed        -> ok;
+tagged_event(_, Event, #state{task_changed_graph=silent})    when element(1, Event) =:= task_changed_graph    -> ok;
+tagged_event(_, Event, #state{task_produced_output=silent})  when element(1, Event) =:= task_produced_output  -> ok;
+tagged_event(_, Event, #state{task_failed=silent})           when element(1, Event) =:= task_failed           -> ok;
+tagged_event(_, Event, #state{invalid_provenence=silent})    when element(1, Event) =:= invalid_provenence    -> ok;
+tagged_event(_, Event, #state{disclaimed_production=silent}) when element(1, Event) =:= disclaimed_production -> ok;
 
 tagged_event(TagString, {graph_changed}, #state{graph_changed=report}) ->
   io:format("~n~s(ergo): graph changed", [TagString]);
@@ -165,6 +167,22 @@ tagged_event(_TagString, {task_produced_output, _Bid, {task, TaskName}, Outlist}
 tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
   io:format("~s(ergo:~p): ~s failed ~p~nOutput:~n~s~n", [TagString, Bid, [[Part, " "] || Part <- TaskName], Exit, OutString]);
 
+
+%{disclaimed_production,
+%              {0,
+%               [<<"tasks/app">>],
+%               [{disclaim,
+%                    {prod,[<<"tasks/app">>],"ebin/.app"},
+%                    [[<<"tasks/tests-ct">>,<<"ergo_freshness">>],
+%                     [<<"tasks/tests-ct">>,<<"integration">>],
+%                     [<<"tasks/all-ct">>]]}]}}
+tagged_event(TagString, {disclaimed_production, Bid, _Task, DisclaimerList}, #state{disclaimed_production=report}) ->
+  lists:foreach(
+    fun(Disclaimer) ->
+        disclaimer_message(TagString, Bid, Disclaimer)
+    end, DisclaimerList);
+
+
 tagged_event(TagString, {invalid_provenence, Bid, About, Asserter, Stmt}, #state{invalid_provenence=report}) ->
   build_tagged_message(TagString, Bid,
                        [<<"Invalid task ">>,format_task(About),<<" drawn into graph by statement: <<">>,
@@ -176,6 +194,10 @@ tagged_event(TagString, Event, #state{unknown_event=report}) ->
 tagged_event(_, _, _) ->
   ok.
 
+disclaimer_message(TagString, Bid, {disclaim, {prod, About, Product}, Mistaken}) ->
+  build_tagged_message(TagString, Bid,
+                       [<<"Task ">>,?tn(About),<<" doesn't report producing ">>, ?pf(Product),
+                        <<" although other tasks claim that it does: ">>, [ [<<"\n    ">>, ?tn(Oops)] || Oops <- Mistaken ]]).
 
 build_tagged_message(TagString, Bid, IoList) ->
   io:format([TagString, build_tag(Bid), IoList, <<"\n">>]).

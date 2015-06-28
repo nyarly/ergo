@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -ex
 
-test $# -ge 1
+exec &> >(tee log/tasks/requires-all)
+
+if [ $# -lt 1 ]; then
+  ergo-task-invalid "Needs the name of a task"
+fi
 TASK=${@}
+
+if echo $TASK | grep '^/'; then
+  ergo-task-invalid "Must use actual taskname (i.e. project rooted)"
+fi
+
 
 ergo-taskfile --requires rosters/beam.txt
 ergo-taskfile --produces rosters/beam.txt --task tasks/beam-chains

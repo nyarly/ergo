@@ -14,3 +14,4 @@ test/ergo_freshness_SUITE_data/config/ergo_mnesia/
 .rebar/
 rosters/
 log/
+old-logs/

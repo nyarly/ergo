@@ -2,7 +2,7 @@
 -behavior(gen_server).
 %% API
 -export([start_link/1, get_products/2,get_dependencies/2,get_metadata/2, build_list/2,task_batch/5,task_invalid/3]).
--export([statement_for_edge/1]).
+-export([statement_for_edge/1, edge_for_statement/1, remove_statement/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
   terminate/2, code_change/3]).
@@ -295,7 +295,7 @@ maybe_notify_changed(Status=#batch_status{contradictions=undefined,taskname=Task
   {Self,Whole} = ergo_graph_contradictions:resolve(Taskname, State),
   maybe_notify_changed(Status#batch_status{contradictions=#contradictions{self=Self,whole=Whole}});
 maybe_notify_changed(Status=#batch_status{disclaimers=undefined,taskname=Taskname,state=State}) ->
-  maybe_notify_changed(Status#batch_status{disclaimers=ergo_graph_disclaims:check(Taskname, State)});
+  maybe_notify_changed(Status#batch_status{disclaimers=ergo_graph_disclaims:resolve(Taskname, State)});
 
 maybe_notify_changed(#batch_status{
                         disclaimers=[],
@@ -367,6 +367,7 @@ add_statement(State=#state{provenence=Provs}, Taskname, Item) ->
     exists -> false
   end.
 
+%XXX this should be "remove support" or something
 del_statement(State=#state{provenence=Provs,edges=Edges}, Taskname, Item) ->
   {_, Edge} = add_statement(State, edge_for_statement(Item)), % XXX
   EdgeId = element(#seq.edge_id, Edge),
@@ -375,6 +376,16 @@ del_statement(State=#state{provenence=Provs,edges=Edges}, Taskname, Item) ->
     [] -> ets:delete_object(Edges, Edge), true;
     _ -> false
   end.
+
+remove_statement(Statement, State=#state{edges=Es}) ->
+  Edge = edge_for_statement(Statement),
+  Ids = [Id || [Id] <- ets:match(Es, setelement(1, Edge, '$1'))],
+  [ remove_edge_with_id(Id, State) || Id <- Ids ].
+
+remove_edge_with_id(Id, State=#state{edges=Es, provenence=Ps}) ->
+  ets:delete(Es, Id),
+  ets:delete_match(Ps, #provenence{edge_id=Id, _='_'}).
+
 
 -spec(normalize_product_name(#state{}, productname()) -> normalized_product()).
 normalize_product_name(#state{workspace_root_re=Regex,workspace=WS}, Name) ->

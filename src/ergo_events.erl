@@ -56,9 +56,9 @@ production_noted(Workspace, Task, Product) ->
 
 %% @spec:	disclaimed_production(product::ergo:produced()) -> ok.
 %% @end
--spec(disclaimed_production(ergo:workspace_name(), ergo:task(), ergo:produced(), [ergo:task()]) -> ok).
-disclaimed_production(Workspace, Task, Product, MistakenTasks) ->
-  send_event(Workspace, {disclaimed_production, {Task, Product, MistakenTasks}}).
+-spec(disclaimed_production(ergo:workspace_name(), ergo:build_id(), ergo:task(), [ergo_graph_disclaims:report()]) -> ok).
+disclaimed_production(Workspace, BuildId, Taskname, MistakenTasks) ->
+  send_event(Workspace, {disclaimed_production, BuildId, Taskname, MistakenTasks}).
 
 %% @spec:	graph_changed() -> ok.
 %% @doc:	The build graph has changed - the build should be re-evaluated

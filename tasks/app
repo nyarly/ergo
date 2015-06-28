@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -ex
 
+exec &> >(tee log/tasks/app)
+
+env
+
 PROJECT=$(basename $(pwd))
 SOURCE=src/${PROJECT}.app.src
 TARGET=ebin/${PROJECT}.app
@@ -11,7 +15,7 @@ ergo-taskfile --produces $TARGET
 ergo-dep -af tasks/requires-all-compiled $0 "$@"
 ergo-taskfile --requires rosters/names.txt
 
-MODULES=$(cat rosters/names.txt | sed 's/.*/'\0',/' | tr -d '\n')
+MODULES=$(cat rosters/names.txt | sed "s/.*/'\0',/" | tr -d '\n' | sed 's/,$//')
 
 grep -Eq '^[^%]*{modules,' $SOURCE #Need an empty modules entry in src/PROJECT.app.src
 

@@ -91,7 +91,7 @@ handle_call(_Request, _From, State) ->
   {reply, Reply, State}.
 
 handle_cast({build_completed}, State) ->
-  {stop, complete, State};
+  {stop, {shutdown, complete}, State};
 handle_cast({task_exit, Task, GraphChange, Outcome, Remaining}, State) ->
   {noreply,
    handle_task_exited( Task, GraphChange, Outcome, Remaining,

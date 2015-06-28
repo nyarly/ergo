@@ -1,0 +1,8 @@
+(Aka Judson reminds himself of unexpected wrinkles)
+
+Q. Why does my build still depend on old tasks?
+
+A. Remember that if a task *fails* we can't be sure that it hasn't omitted a
+dependency. (A "deps complete" would help this but for now...) So if a task
+fails, dependencies won't be removed from the graph. Get the task to succeed
+and they'll go away.

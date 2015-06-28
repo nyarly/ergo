@@ -6,7 +6,17 @@
 -define(NOTEST, true).
 -include_lib("eunit/include/eunit.hrl").
 
--export([check/2]).
+-export([resolve/2]).
+
+-type report() :: {disclaim, {prod, ergo:taskname(), ergo:product()}, [ergo:taskname()]}.
+
+resolve(TaskName, State) ->
+  Disclaimers = check(TaskName, State),
+  clear_disclaimers(Disclaimers, State),
+  Disclaimers.
+
+clear_disclaimers(Disclaimers, State) ->
+  [ ergo_graph:remove_statement(State, Statement) || {disclaim, Statement, _} <- Disclaimers ].
 
 check(TaskName, #state{edges=Etab,provenence=Ptab}) ->
   Claims = production_claims(TaskName, Etab, Ptab),
@@ -40,6 +50,7 @@ map_to_list(Fun, Dict) ->
                 [Fun(Key, Value) | List]
             end, [], Dict).
 
+-spec(format_disclaimer(ergo:taskname(), ergo:product(), [ergo:taskname()]) -> report()).
 format_disclaimer(TaskName, Product, Liars) -> {disclaim, {prod, TaskName, Product}, Liars}.
 
 %%% Tests

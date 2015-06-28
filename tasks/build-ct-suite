@@ -13,6 +13,7 @@ SOURCE=test/${SOURCE_SUITE}_SUITE.erl
 TARGET=test/${SOURCE_SUITE}_SUITE.beam
 #The old makefile dep'd on 'build-ct-deps' which appears to be user config'd
 ergo-taskfile --produces $TARGET
+ergo-taskfile --requires ${SOURCE}
 
 HEADERS=$(erlc -M -MP -MG ${SOURCE} | grep ':$' | grep -v '^/' | sed 's/:$//')
 for h in $HEADERS; do

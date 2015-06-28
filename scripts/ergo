@@ -6,5 +6,7 @@ main(Args) ->
     Taskname = [list_to_binary(Part) || Part <- Args],
     {ok, WS, _WatchRef} = ergo:attach_workspace(),
     {ok, {build_id, Id}} = ergo:run_build(WS, [{task, Taskname}]),
+
     {ok, Success, Message} = ergo_api:wait_on_build(WS, Id),
+    timer:sleep(500), %really, should have some way to flush events
     io:format("Build ~.10b : ~p completed.~n  ~p - ~p~n", [Id, Args, Success, Message]).
