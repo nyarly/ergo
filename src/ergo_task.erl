@@ -252,6 +252,11 @@ exit_status(0, State) ->
 exit_status(Status, State) ->
   record_batch({err, {exit_status, Status}}, State).
 
+report_concluded({err, RecordError}, TaskResult) ->
+  ergo_task_pool:task_concluded(no_change, {failed, {record_error, RecordError}, []});
+report_concluded({ok, Changed}, TaskResult) ->
+  ergo_task_pool:task_concluded(Changed, TaskResult).
+
 
 record_batch(_, #state{invalid=true}) ->
   ok;
@@ -259,8 +264,12 @@ record_batch(_, #state{skipped=true}) ->
   ergo_task_pool:task_concluded(no_change, skipped);
 record_batch(ok, #state{workspace=WS, build_id=Bid, name=Name, graphitems=Graph}) ->
   ergo_freshness:store(WS, Name),
-  {ok, Changed} = ergo_graphs:task_batch(WS, Bid, Name, Graph, true),
-  ergo_task_pool:task_concluded(Changed, success);
+  report_concluded(
+    ergo_graphs:task_batch(WS, Bid, Name, Graph, true),
+    success
+   );
 record_batch(Error, #state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph, output=Output}) ->
-  {ok, Changed} = ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, false),
-  ergo_task_pool:task_concluded(Changed, {failed, Error, lists:flatten(lists:reverse(Output))}).
+  report_concluded(
+    ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, false),
+    {failed, Error, lists:flatten(lists:reverse(Output))}
+   ).

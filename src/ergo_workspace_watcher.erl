@@ -26,7 +26,7 @@
            task_produced_output = silent,
           task_failed          = report,
           invalid_provenence   = report,
-          disclaimed_production= report,
+           disclaimed_production= silent,
           unknown_event        = report
          }).
 
@@ -165,7 +165,10 @@ tagged_event(_TagString, {task_produced_output, _Bid, {task, TaskName}, Outlist}
   io:format("~p: ~s", [TaskName, Outlist]);
 
 tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
-  io:format("~s(ergo:~p): ~s failed ~p~nOutput:~n~s~n", [TagString, Bid, [[Part, " "] || Part <- TaskName], Exit, OutString]);
+  build_tagged_message(TagString, Bid,
+                       [?tn(TaskName), <<" failed ">>, format_error(Exit), <<"\nOutput: \n">>, OutString]);
+
+
 
 
 %{disclaimed_production,
@@ -179,7 +182,7 @@ tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutS
 tagged_event(TagString, {disclaimed_production, Bid, _Task, DisclaimerList}, #state{disclaimed_production=report}) ->
   lists:foreach(
     fun(Disclaimer) ->
-        disclaimer_message(TagString, Bid, Disclaimer)
+        build_tagged_message(TagString, Bid, disclaimer_message(Disclaimer))
     end, DisclaimerList);
 
 
@@ -194,10 +197,15 @@ tagged_event(TagString, Event, #state{unknown_event=report}) ->
 tagged_event(_, _, _) ->
   ok.
 
-disclaimer_message(TagString, Bid, {disclaim, {prod, About, Product}, Mistaken}) ->
-  build_tagged_message(TagString, Bid,
-                       [<<"Task ">>,?tn(About),<<" doesn't report producing ">>, ?pf(Product),
-                        <<" although other tasks claim that it does: ">>, [ [<<"\n    ">>, ?tn(Oops)] || Oops <- Mistaken ]]).
+format_error({record_error, {disclaimed_production, DisclaimerList}}) ->
+  [ disclaimer_message(Disclaimer) || Disclaimer <- DisclaimerList ];
+format_error(Error) ->
+  ?pf(Error).
+
+
+disclaimer_message({disclaim, {prod, About, Product}, Mistaken}) ->
+  [<<"Task ">>,?tn(About),<<" doesn't report producing ">>, ?pf(Product),
+   <<" although other tasks claim that it does: ">>, [ [<<"\n    ">>, ?tn(Oops)] || Oops <- Mistaken ]].
 
 build_tagged_message(TagString, Bid, IoList) ->
   io:format([TagString, build_tag(Bid), IoList, <<"\n">>]).

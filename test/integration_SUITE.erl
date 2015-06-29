@@ -73,7 +73,7 @@ groups() ->
   [].
 
 all() ->
-  [root_task, two_tasks, invalid_task, missing_script].
+  [root_task, two_tasks, invalid_task, missing_script, disclaimed_production].
 
 %%--
 %% HELPERS
@@ -238,6 +238,28 @@ missing_script(Config) ->
   ergo_api:wait_on_build(Workspace, Id2),
   match_dir([PrivDir, "missing_script/result"], Workspace),
   ok.
+
+disclaimed_production() ->
+  [].
+disclaimed_production(Config) ->
+  PrivDir = proplists:get_value(priv_dir, Config),
+  Workspace = [PrivDir, "disclaimed_production/project"],
+  ergo:watch(Workspace),
+  {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo_api:wait_on_build(Workspace, Id),
+
+  %XXX build should fail, without change to project...
+  %match_dir([PrivDir, "disclaimed_production/project"], Workspace),
+  %fix it...
+  copy_file([PrivDir, "disclaimed_production/fixed/tasks/two"], [PrivDir, "disclaimed_production/project/tasks/two"]),
+  ct:pal("Fixed build tasks - re-running"),
+  %and try again
+  {ok, {build_id, Id2}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
+  ergo_api:wait_on_build(Workspace, Id2),
+  match_dir([PrivDir, "disclaimed_production/result"], Workspace),
+  ok.
+
+
 
 
 

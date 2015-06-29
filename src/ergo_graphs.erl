@@ -301,13 +301,14 @@ maybe_notify_changed(#batch_status{
                         disclaimers=[],
                         contradictions=#contradictions{self=[],whole=Contras},
                         build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
-  report_contradictions(BuildId, Workspace, Taskname, Contras),
+  report_contradictions(Workspace, BuildId, Taskname, Contras),
   dump_to(State),
   ergo_events:graph_changed(Workspace),
   {ok, changed};
 maybe_notify_changed(#batch_status{disclaimers=List,
-                                   build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
+                                   build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
   report_production_disclaimers(Workspace, BuildId, Taskname, List),
+  dump_to(State),
   {err, {disclaimed_production, List}};
 maybe_notify_changed(#batch_status{contradictions=#contradictions{self=List},
                                    build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
@@ -377,14 +378,13 @@ del_statement(State=#state{provenence=Provs,edges=Edges}, Taskname, Item) ->
     _ -> false
   end.
 
-remove_statement(Statement, State=#state{edges=Es}) ->
-  Edge = edge_for_statement(Statement),
-  Ids = [Id || [Id] <- ets:match(Es, setelement(1, Edge, '$1'))],
+remove_statement({prod, Task, Product}, State=#state{edges=Es}) ->
+  Ids = [Id || [Id] <- ets:match(Es, #production{edge_id='$1', task=Task, produces=Product, _='_'})],
   [ remove_edge_with_id(Id, State) || Id <- Ids ].
 
-remove_edge_with_id(Id, State=#state{edges=Es, provenence=Ps}) ->
+remove_edge_with_id(Id, #state{edges=Es, provenence=Ps}) ->
   ets:delete(Es, Id),
-  ets:delete_match(Ps, #provenence{edge_id=Id, _='_'}).
+  ets:match_delete(Ps, #provenence{edge_id=Id, _='_'}).
 
 
 -spec(normalize_product_name(#state{}, productname()) -> normalized_product()).
