@@ -24,12 +24,11 @@ init_per_suite(Config) ->
 
   dbg:tracer(),
 
-  dbg:tpl(application, []),
+  %dbg:tpl(application, []),
   {ok,_}=dbg:p(all, call),
 
   application:set_env(ergo, config_dir, filename:join([Priv, "config"]), [{persistent, true}]),
   ok = application:start(ergo),
-  ct:pal("~p", [application:which_applications()]),
   ergo_sup:start_workspace(Priv),
   Config.
 

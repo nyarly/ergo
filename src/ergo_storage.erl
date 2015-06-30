@@ -17,7 +17,7 @@ start() ->
 setup_storage() ->
   MnesiaDir = ergo_config:mnesia_dir(),
   io:format("Ensuring that ~p exists.~n", [MnesiaDir]),
-  filelib:ensure_dir(MnesiaDir),
+  ok = filelib:ensure_dir(MnesiaDir),
   set_storage_dir(MnesiaDir).
 
 set_storage_dir(Dir) ->

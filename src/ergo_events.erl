@@ -42,21 +42,15 @@ build_notes_task_complete(Workspace, BuildId, Taskname, Started, Completed) ->
 task_generation(Workspace, BuildId, TaskList) ->
   send_event(Workspace, {task_generation, BuildId, TaskList}).
 
-%% @spec:	requirement_noted(product::ergo:produced(), dependency::ergo:produced()) -> ok.
-%% @end
 -spec(requirement_noted(ergo:workspace_name(), ergo:produced(), ergo:produced()) -> ok).
 requirement_noted(Workspace, Product, Dependency) ->
   send_event(Workspace, {requirement_noted, {Product, Dependency}}).
 
-%% @spec:	production_noted(product::ergo:produced()) -> ok.
-%% @end
 -spec(production_noted(ergo:workspace_name(), ergo:task(), ergo:produced()) -> ok).
 production_noted(Workspace, Task, Product) ->
   send_event(Workspace, {production_noted, {Task, Product}}).
 
-%% @spec:	disclaimed_production(product::ergo:produced()) -> ok.
-%% @end
--spec(disclaimed_production(ergo:workspace_name(), ergo:build_id(), ergo:task(), [ergo_graph_disclaims:report()]) -> ok).
+-spec(disclaimed_production(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), [ergo_graph_disclaims:report()]) -> ok).
 disclaimed_production(Workspace, BuildId, Taskname, MistakenTasks) ->
   send_event(Workspace, {disclaimed_production, BuildId, Taskname, MistakenTasks}).
 
@@ -88,9 +82,7 @@ task_started(Workspace, BuildId, Task) ->
 task_produced_output(Workspace, BuildId, Task, Output) ->
   send_event(Workspace, {task_produced_output, BuildId, Task, Output}).
 
-%% @spec:	invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:task(), ergo:task(), ergo:graph_item()) -> ok.
-%% @end
--spec invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:task(), ergo:task(), ergo:graph_item()) -> ok.
+-spec invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), ergo:taskname(), ergo:graph_item()) -> ok.
 invalid_provenence(Workspace, BuildId, About, Asserter, Stmt) ->
   send_event(Workspace, {invalid_provenence, BuildId, About, Asserter, Stmt}).
 

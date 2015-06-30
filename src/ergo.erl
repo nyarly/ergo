@@ -34,7 +34,7 @@
 
 -type workspace_name() :: binary().
 
--type command_response() :: ok.
+-type command_response() :: {ok, term()}.
 %-type query_response() :: ok.
 
 setup(Dir) ->

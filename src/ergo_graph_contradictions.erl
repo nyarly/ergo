@@ -59,7 +59,7 @@ format_contradiction(#contradiction{rule_name=Rule, subject=About, statements=Li
                  #endorsed_statement{statement=Edge, provenences=Provs} <- List, Prov <- Provs]}.
 
 fix_self_contradictions(Contras, State) ->
-  [ fix_self_contradiction(List, State) || #contradiction{statements=List} <- Contras ],
+  _ = [ fix_self_contradiction(List, State) || #contradiction{statements=List} <- Contras ],
   Contras.
 
 fix_self_contradiction(Contras, State) ->
@@ -81,10 +81,10 @@ winnow_statements(Contra, {New, Reit, Old}, _) ->
 retain_best_group([], _New, Old, State) ->
   remove_all_of(Old, State);
 retain_best_group(_Reit, New, Old, State) ->
-  remove_all_of(New, State), remove_all_of(Old, State).
+  _ = remove_all_of(New, State), remove_all_of(Old, State).
 
 fix_contradictions(Contras, State=#state{batch_id=BatchId}) ->
-  remove_all_of([ Contra ||
+  _ = remove_all_of([ Contra ||
     #contradiction{ statements=List } <- Contras,
     Contra=#endorsed_statement{ statement=Stmt } <-  List,
     element(#seq.batch_id, Stmt) =/= BatchId % seq as examplar for edges

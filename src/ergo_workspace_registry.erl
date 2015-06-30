@@ -7,11 +7,16 @@
 
 -export([register_name/2, unregister_name/1, whereis_name/1, whois_pid/1, send/2, normalize_name/1]).
 
--type(roletype() :: supervisor | build | server | graph | events).
+-type(roletype() :: supervisor | build | server | graph | events | task).
 -define(SERVER, ?MODULE).
 -record(state, {item_index::integer(), registry}).
 -record(registry_key, {workspace::binary(),role::roletype(),name::term()}).
--record(registration, {key::#registry_key{}|'_',pid::pid()|'_',monref::reference()|'_',index::binary()}).
+-record(registration, {
+          key    :: #registry_key{} | '_',
+          pid    :: pid()           | '_',
+          monref :: reference()     | '_',
+          index  :: binary()        | '_'
+         }).
 
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -35,6 +40,7 @@ name_from_id(Id) ->
   gen_server:call(?SERVER, {name_for_id, Id}).
 
 id_from_name({Workspace,Role,Name}) ->
+  ct:pal("~p", [{Workspace, Role, Name}]),
   gen_server:call(?SERVER, {process_id, reg_key_for(Workspace,Role,Name)}).
 
 link_to(ViaTuple) ->
@@ -99,7 +105,7 @@ build_state() ->
 reg_name(RegKey=#registry_key{role=Role}, Pid, RegTab, Index) ->
   MonitorRef = monitor(process, Pid),
   Reg = #registration{key=RegKey, pid=Pid, monref=MonitorRef, index=index_for(Role,Index)},
-  register_response(ets:insert(RegTab, Reg), Reg).
+  register_response(ets:insert_new(RegTab, Reg), Reg).
 
 register_response(true, _Reg) -> yes;
 register_response(_, #registration{monref=MonRef}) ->

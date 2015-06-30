@@ -46,13 +46,18 @@ freshness_for_task(Root, Task, Default) ->
   proplists:get_value(fresh, ergo_graphs:get_metadata(Root, {task, Task}), Default).
 
 freshness_for_file(Root, TaskFresh, File) ->
-  proplists:get_value(fresh, ergo_graphs:get_metadata(Root, {product, File}), TaskFresh).
+  proplists:get_value(fresh, ergo_graphs:get_metadata(Root, {produced, File}), TaskFresh).
 
 freshness_policy(Root, Task, Deps, Prods) ->
-  freshness_policy(Root, Task, Deps, Prods, freshness_for_task(Root, {task, Task}, digest), digest).
+  freshness_policy(Root, Task, Deps, Prods, freshness_for_task(Root, Task, digest), digest).
 
-freshness_policy(_, _, _, _, _, never) ->
-  never;
+-type policy() :: digest | never.
+-type file_policy() :: policy().
+-type task_policy() :: digest.
+
+-spec(freshness_policy(ergo:workspace_name(), ergo:taskname(), [file:name_all()], [file:name_all()], file_policy(), task_policy()) -> policy()).
+%freshness_policy(_, _, _, _, _, never) ->
+%  never;
 freshness_policy(_, _, [], [], _, digest) ->
   digest;
 freshness_policy(Root, Task, [], [File | Prods], TaskFresh, digest) ->
@@ -73,8 +78,8 @@ store(Root, Task, Deps, Prods) ->
     end),
   ok.
 
-check(never, _,_,_,_) ->
-  miss;
+%check(never, _,_,_,_) ->
+%  miss;
 check(digest, Root, Task, Deps, Prods) ->
   {atomic, Matches} =
   mnesia:transaction(

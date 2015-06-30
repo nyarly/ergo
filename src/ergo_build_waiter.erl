@@ -23,7 +23,7 @@
 %%%===================================================================
 wait_on(Workspace, BuildId) ->
   Ref = {?MODULE, make_ref()},
-  add_listener(Workspace, BuildId, Ref),
+  Ref = add_listener(Workspace, BuildId, Ref),
   block_until_dead(ergo_build:check_alive(Workspace,BuildId), Workspace, BuildId, Ref).
 
 block_until_dead(alive, Workspace, BuildId, Ref) ->
@@ -31,7 +31,7 @@ block_until_dead(alive, Workspace, BuildId, Ref) ->
     {build_complete, Success, Message} -> {ok, Success, Message};
     {gen_event_EXIT, Ref, normal} -> {ok, unknown, events_exited};
     {gen_event_EXIT, _DifferentRef, normal} -> block_until_dead(alive, Workspace, BuildId, Ref);
-    OtherThing -> ct:pal("Waiter ~p: Don't recognize: ~p~n", [Ref, OtherThing])
+    OtherThing -> io:format("Waiter ~p: Don't recognize: ~p~n", [Ref, OtherThing])
   end;
 block_until_dead(_, _, _, _) ->
   ok.

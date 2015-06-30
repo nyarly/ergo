@@ -59,7 +59,7 @@ add_to_sup(Workspace, Args) ->
   Handler.
 
 remove(Workspace, Handler) ->
-  gen_event:delete_hander(?VIA(Workspace), Handler).
+  gen_event:delete_handler(?VIA(Workspace), Handler, []).
 
 
 %%%===================================================================
@@ -129,7 +129,7 @@ tagged_event(TagString, {build_warning, BuildId, Warning}, #state{build_warning=
 
 
 tagged_event(TagString, {build_task_done, BuildId, Taskname, Started, Completed}, #state{build_task_done=report}) ->
-  io:format([TagString,build_tag(BuildId),<<"Task ">>,?tn(Taskname),<<" marked done. ">>,?pf(Started - Completed),<<" tasks outstanding (">>,?pf(Started),<<"/">>,?pf(Completed),<<")\n">>]);
+  io:write([TagString,build_tag(BuildId),<<"Task ">>,?tn(Taskname),<<" marked done. ">>,?pf(Started - Completed),<<" tasks outstanding (">>,?pf(Started),<<"/">>,?pf(Completed),<<")\n">>]);
 
 tagged_event(TagString, {build_start, Workspace, BuildId, Targets}, #state{build_start=report}) ->
   io:format([TagString,<<"(ergo): build ">>,build_tag(BuildId),<<" targets: ">>,?pf(Targets),<<" starting in:\n  ">>,Workspace,<<"\n">>]);
@@ -156,7 +156,7 @@ tagged_event(TagString, {task_skipped, Bid, {task, TaskName}}, #state{task_skipp
   io:format("~s(ergo:~p):   skipped: ~s ~n", [TagString, Bid, format_task(TaskName)]);
 
 tagged_event(TagString, {task_invalid, Bid, TaskName, Message}, #state{task_invalid=report}) ->
-  io:format([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: ",?pf(Message),"\n"]);
+  io:write([TagString, "(ergo:",pfmt(Bid),"):   invalid: ",format_task(TaskName)," because: ",?pf(Message),"\n"]);
 
 tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task_changed_graph=report}) ->
   io:format("~s(ergo:~p): done: ~s: changed dependency graph - recomputing build... ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
@@ -208,7 +208,7 @@ disclaimer_message({disclaim, {prod, About, Product}, Mistaken}) ->
    <<" although other tasks claim that it does: ">>, [ [<<"\n    ">>, ?tn(Oops)] || Oops <- Mistaken ]].
 
 build_tagged_message(TagString, Bid, IoList) ->
-  io:format([TagString, build_tag(Bid), IoList, <<"\n">>]).
+  io:write([TagString, build_tag(Bid), IoList, <<"\n">>]).
 
 pfmt(Term) ->
   io_lib:format("~p", [Term]).

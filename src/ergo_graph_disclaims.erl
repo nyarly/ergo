@@ -4,7 +4,9 @@
 -include_lib("stdlib/include/qlc.hrl").
 
 -define(NOTEST, true).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([resolve/2]).
 
@@ -12,7 +14,7 @@
 
 resolve(TaskName, State) ->
   Disclaimers = check(TaskName, State),
-  clear_disclaimers(Disclaimers, State),
+  _ = clear_disclaimers(Disclaimers, State),
   Disclaimers.
 
 clear_disclaimers(Disclaimers, State) ->
@@ -55,6 +57,7 @@ format_disclaimer(TaskName, Product, Liars) -> {disclaim, {prod, TaskName, Produ
 
 %%% Tests
 
+-ifdef(TEST).
 disclaim_test_() ->
   TheTask=[<<"supposed_to_produce">>],
   Gossiper=[<<"says_they_produce">>],
@@ -122,3 +125,4 @@ disclaim_test_() ->
     end
    ]
   }.
+-endif.

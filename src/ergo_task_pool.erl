@@ -121,8 +121,8 @@ monitored_process_exited(worker, Ref, Who, Info, State) ->
   ExitedState = remove_worker(Who, Ref, State),
   report_task_complete(Task, Info, ExitedState),
   check_queue(ExitedState);
-monitored_process_exited(build, Ref, Who, Info, State) ->
-  report_build_exited(Who, Info, State),
+monitored_process_exited(build, Ref, _Who, _Info, State) ->
+  %report_build_exited(Who, Info, State),
   build_exited(Ref, State).
 
 report_task_complete(Task, _Info, State) ->
@@ -154,10 +154,10 @@ register_build(WS, Bid, Proc, State) ->
   Ref = monitor(process, Proc),
   add_build_to_state(Ref, Proc, WS, Bid, State).
 
-report_build_exited(Ref, Info, #state{builds=Bids}) ->
-  #build{build_id=Bid,workspace=WS} = dict:fetch(Ref, Bids),
-  ergo_events:build_exited(WS, Bid, Info).
-
+%report_build_exited(Ref, Info, #state{builds=Bids}) ->
+%  #build{build_id=Bid,workspace=WS} = dict:fetch(Ref, Bids),
+%  ergo_events:build_exited(WS, Bid, Info).
+%
 notify_build(#task{workspace=WS, build_id=Bid, task=T, outcome=Outcome, graph_status=GraphChanged}, State) ->
   ergo_build:task_exited(WS, Bid, T, GraphChanged, Outcome, count_remaining(Bid, State)).
 
@@ -168,9 +168,9 @@ report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome=success
   ergo_events:task_completed(WS, Bid, {task, T});
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={failed, Reason, Output}, graph_status=changed}) ->
   ergo_events:task_changed_graph(WS, Bid, {task, T}),
-  ergo_events:task_failed(WS, Bid, {task, T}, Reason, {output, Output});
+  ergo_events:task_failed(WS, Bid, {task, T}, Reason, [Output]);
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={failed, Reason, Output}, graph_status=no_change}) ->
-  ergo_events:task_failed(WS, Bid, {task, T}, Reason, {output, Output});
+  ergo_events:task_failed(WS, Bid, {task, T}, Reason, [Output]);
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome=skipped}) ->
   ergo_events:task_skipped(WS, Bid, {task, T});
 report_task_conclusion(#task{workspace=WS, build_id=Bid, task=T, outcome={invalid, Message}}) ->

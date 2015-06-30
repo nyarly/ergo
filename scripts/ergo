@@ -4,6 +4,7 @@
 main(Args) ->
     process_flag(trap_exit, true),
     Taskname = [list_to_binary(Part) || Part <- Args],
+    io:format("Starting build~n", []),
     {ok, WS, _WatchRef} = ergo:attach_workspace(),
     {ok, {build_id, Id}} = ergo:run_build(WS, [{task, Taskname}]),
 

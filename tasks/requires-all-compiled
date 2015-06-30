@@ -6,10 +6,10 @@ exec &> >(tee log/tasks/requires-all)
 if [ $# -lt 1 ]; then
   ergo-task-invalid "Needs the name of a task"
 fi
-TASK=${@}
+TASK=$(realpath ${@} | sed "s#^${ERGO_WORKSPACE}\(\/\)\?##")
 
 if echo $TASK | grep '^/'; then
-  ergo-task-invalid "Must use actual taskname (i.e. project rooted)"
+  ergo-task-invalid "Must use actual taskname (i.e. project rooted) not: ${TASK}"
 fi
 
 

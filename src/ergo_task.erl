@@ -189,6 +189,7 @@ handle_begin_task(#launch{fullexe=Command, args=Args, fresh=miss},
           ],
   State#state{cmdport=(catch open_port( {spawn_executable, Command}, PortConfig))}.
 
+-spec(process_launch_result(#state{} | skipped | {no_such_task, term()}) -> {stop, atom | term(), #state{}} | {noreply, #state{}}).
 process_launch_result(State=#state{cmdport={'EXIT', Reason}}) ->
   ergo_task_pool:task_concluded(no_change, {failed, Reason, []}),
   {stop, Reason, State};
@@ -219,10 +220,11 @@ report_invalid(Message, State=#state{workspace=WS, build_id=B, name=Task}) ->
 
 
 become_invalid(Message, State) ->
-  report_invalid(Message, State),
+  _ = report_invalid(Message, State),
   kill_self(State),
   State#state{invalid=true}.
 
+-spec(task_env(ergo:workspace_name(), ergo:taskname(), [{atom(), term()}]) -> [{string(), string()}]).
 task_env(Workspace, TaskName, Config) ->
   [
    {"ERL_CALL", filename:join(code:lib_dir(erl_interface, bin),"erl_call")},
@@ -252,12 +254,13 @@ exit_status(0, State) ->
 exit_status(Status, State) ->
   record_batch({err, {exit_status, Status}}, State).
 
-report_concluded({err, RecordError}, TaskResult) ->
+report_concluded({failed, RecordError}, _TaskResult) ->
   ergo_task_pool:task_concluded(no_change, {failed, {record_error, RecordError}, []});
 report_concluded({ok, Changed}, TaskResult) ->
   ergo_task_pool:task_concluded(Changed, TaskResult).
 
 
+-spec(record_batch(ok | term(), #state{}) -> outcome()).
 record_batch(_, #state{invalid=true}) ->
   ok;
 record_batch(_, #state{skipped=true}) ->

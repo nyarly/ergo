@@ -5,7 +5,7 @@
       {app,ergo,[
                  {incl_cond,include},
                  {lib_dir,"/home/judson/erlang/ergo"},
-                 {excl_app_filters,["^logs/.*", "^\\.git/.*", "^deps/.*", ".*sw[poq]$"]}
+                 {excl_app_filters,["^old-logs/.*", "^logs/.*", "^\\.git/.*", "^deps/.*", ".*sw[poq]$"]}
                 ]},
       {app,erl_interface,[{incl_cond,include},{excl_archive_filters,["^include$","^priv$","^bin$"]}]},
       {app,eunit,[{incl_cond,exclude}]},

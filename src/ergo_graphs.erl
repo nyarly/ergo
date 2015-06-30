@@ -20,28 +20,20 @@ start_link(Workspace) ->
 
 -include("ergo_graphs.hrl").
 
-%% @spec:	get_products(Task::ergo:task()) -> ok.
-%% @end
 -spec(get_products(ergo:workspace_name(), ergo:task()) -> [ergo:productname()]).
 get_products(Workspace, Task) ->
   gen_server:call(?VIA(Workspace), {products, Task}).
 
-%% @spec:	get_products(Task::ergo:task()) -> ok.
-%% @end
 -spec(get_dependencies(ergo:workspace_name(), ergo:task()) -> [ergo:productname()]).
 get_dependencies(Workspace, Task) ->
   gen_server:call(?VIA(Workspace), {dependencies, Task}).
 
-%% @spec:	build_list(Targets::[ergo:target()]) -> ok.
-%% @end
--spec(build_list(ergo:workspace_name(), [ergo:target()]) -> ok).
+-spec(build_list(ergo:workspace_name(), [ergo:target()]) -> ergo:build_spec()).
 build_list(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {build_list, Targets}).
 
 
-%% @spec:	get_metadata(Target::ergo:target()) -> ok.
-%% @end
--spec(get_metadata(ergo:workspace_name(), ergo:target()) -> ok).
+-spec(get_metadata(ergo:workspace_name(), ergo:target()) -> [{atom(), term()}]).
 get_metadata(Workspace, Target) ->
   gen_server:call(?VIA(Workspace), {get_metadata, Target}).
 
@@ -126,12 +118,13 @@ provenence_about_edges(EdgeList, #state{provenence=Pvs}) ->
 remove_edge_pairs(EPs, #state{edges=ETab, provenence=PTab}) ->
   [{ets:delete_object(ETab, Edge), ets:delete_object(PTab, Prv)} || {Edge, Prv} <- EPs].
 
+-spec(report_invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), {edge_record(), #provenence{}}) -> ok).
 report_invalid_provenence(Workspace, BuildId, About, {Edge, #provenence{task=Asserter}}) ->
   ergo_events:invalid_provenence(Workspace, BuildId, About, Asserter, statement_for_edge(Edge)).
 
 
 report_invalid_provenences(EPs, Task, BuildId, State=#state{workspace=Workspace}) ->
-  dump_to(State),
+  _State = dump_to(State),
   [report_invalid_provenence(Workspace, BuildId, Task, EP) || EP <- EPs].
 
 remove_task_by_name(TaskName, State=#state{vertices=Vs}) ->
@@ -147,8 +140,8 @@ remove_task(TaskName, State) ->
   InvProvs = provenence_about_edges(InvalidEdges, State),
 
   remove_task_by_name(TaskName, State),
-  remove_task_provenences(TaskName, State),
-  remove_edge_pairs(InvProvs, State),
+  _ = remove_task_provenences(TaskName, State),
+  _ = remove_edge_pairs(InvProvs, State),
   InvProvs.
 
 edges_about_task(Task, State) ->
@@ -210,7 +203,7 @@ dump_to(State=#state{workspace=Workspace}) ->
 
 -spec dump_to(#state{}, file:name()) -> #state{}.
 dump_to(State=#state{vertices=VTab, edges=ETab, provenence=PTab}, FilenameBase) ->
-  filelib:ensure_dir(FilenameBase),
+  ok = filelib:ensure_dir(FilenameBase),
   ok = ets:tab2file(VTab, [FilenameBase, ".vtab"]),
   ok = ets:tab2file(ETab, [FilenameBase, ".etab"]),
   ok = ets:tab2file(PTab, [FilenameBase, ".ptab"]),
@@ -302,19 +295,23 @@ maybe_notify_changed(#batch_status{
                         contradictions=#contradictions{self=[],whole=Contras},
                         build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
   report_contradictions(Workspace, BuildId, Taskname, Contras),
-  dump_to(State),
+  _S = dump_to(State),
   ergo_events:graph_changed(Workspace),
   {ok, changed};
-maybe_notify_changed(#batch_status{disclaimers=List,
-                                   build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
-  report_production_disclaimers(Workspace, BuildId, Taskname, List),
-  dump_to(State),
-  {err, {disclaimed_production, List}};
-maybe_notify_changed(#batch_status{contradictions=#contradictions{self=List},
-                                   build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
+maybe_notify_changed(#batch_status{
+                        disclaimers=[],
+                        contradictions=#contradictions{self=List},
+                        build_id=BuildId, taskname=Taskname, state=#state{workspace=Workspace}}) ->
   report_contradictions(Workspace, BuildId, Taskname, List),
-  {err, {self_contradictions, List}}.
+  {err, {self_contradictions, List}};
+maybe_notify_changed(#batch_status{
+                        disclaimers=List,
+                        build_id=BuildId, taskname=Taskname, state=State=#state{workspace=Workspace}}) ->
+  report_production_disclaimers(Workspace, BuildId, Taskname, List),
+  _S = dump_to(State),
+  {err, {disclaimed_production, List}}.
 
+-spec(report_production_disclaimers(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), [ergo_graph_disclaims:report()]) -> ok).
 report_production_disclaimers(Workspace, BuildId, Taskname, List) ->
   ergo_events:disclaimed_production(Workspace, BuildId, Taskname, List).
 
@@ -547,7 +544,7 @@ task_deps(State, TaskName) ->
 
 handle_get_metadata({task, Taskname}, State) ->
   get_task_metadata(Taskname, State);
-handle_get_metadata({product, Product}, State) ->
+handle_get_metadata({produced, Product}, State) ->
   get_product_metadata(normalize_product_name(State, Product), State).
 
 get_task_metadata(Taskname, #state{edges=Edges}) ->
@@ -722,13 +719,13 @@ seq_graph(State) -> intermediate_graph(State, digraph:new([acyclic]), all_seq_ed
 -spec(intermediate_graph(#state{}, digraph:graph(), [edge_record()]) -> digraph:graph()).
 intermediate_graph(State, Graph, EdgeList) ->
   TaskLookup = task_cache(Graph, all_tasks(State)),
-  [ add_intermediate_edge(Edge, TaskLookup, Graph) || Edge <- EdgeList ],
+  _ = [ add_intermediate_edge(Edge, TaskLookup, Graph) || Edge <- EdgeList ],
   Graph.
 
 add_intermediate_edge(Edge, TaskLookup, Graph) ->
-  BeforeV = gb_trees:get(Edge#gen_edge.from, TaskLookup),
-  ThenV = gb_trees:get(Edge#gen_edge.to, TaskLookup),
-  digraph:add_edge(Graph, BeforeV, ThenV, #edge_label{from_edges=Edge#gen_edge.implied_by}).
+  BeforeV = gb_trees:get(element(#gen_edge.from, Edge), TaskLookup),
+  ThenV = gb_trees:get(element(#gen_edge.to, Edge), TaskLookup),
+  digraph:add_edge(Graph, BeforeV, ThenV, #edge_label{from_edges=element(#gen_edge.implied_by, Edge)}).
 
 task_cache(Graph, Tasks) ->
   lists:foldl( fun(Task, TaskLookup) ->
@@ -833,40 +830,36 @@ task_to_task_req_query(#state{edges=Edges}) ->
 %    (  Post  ) --- PostPdctn ---> (Prod)
 -spec(task_to_task_dep_query(#state{}) -> qlc:query_handle()).
 task_to_task_dep_query(#state{edges=Edges}) ->
-  qlc:q([#gen_edge{from=BT, to=AT, implied_by=[BI,DI,AI]} ||
-         #production{task=BT, edge_id=BI, produces=BP} <- ets:table(Edges),
+  Q = qlc:q([ {DI, AI, DT, AT} ||
          #dep{edge_id=DI, from=DF, to=DT} <- ets:table(Edges),
          #production{task=AT, edge_id=AI, produces=AP} <- ets:table(Edges),
-         BP =:= DT, DF =:= AP
+         DF =:= AP ]),
+  qlc:q([#gen_edge{from=BT, to=AT, implied_by=[BI,DI,AI]} ||
+         #production{task=BT, edge_id=BI, produces=BP} <- ets:table(Edges),
+         {DI, AI, DT, AT} <- Q,
+         BP =:= DT
         ]).
 
 
 -spec(tasks_from_targets(#state{}, [ergo:target()]) -> [ergo:task()|{error,term()}]).
 tasks_from_targets(State, Targets) ->
-  lists:map(
-    fun(Target) ->
-        case Target of
-          {product, ProductName} ->
-            case task_for_product(State, ProductName) of
-              {err, Error} -> {error, Error};
-              #task{name=Name} -> {task, Name}
-            end;
-          {task, _} -> Target
-        end
-    end,
-    Targets ).
+  [ task_from_target(State, Target) || Target <- Targets ].
+
+task_from_target(State, {product,Product}) ->
+  task_or_error(task_for_product(State, Product), Product);
+task_from_target(_, Target={task,_}) ->
+  Target.
+
+task_or_error([], Product) -> {error, {no_task_produces, Product}};
+task_or_error([#task{name=Name}], _P) -> {task, Name};
+task_or_error(FoundTasks, Product) -> {error, {violated_invariant, single_producer, Product, FoundTasks}}.
 
 % Task for product
--spec(task_for_product(#state{}, productname()) -> #task{}).
+-spec(task_for_product(#state{}, productname()) -> [#task{}] | {error, term()}).
 task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
   TaskQ = qlc:q([ V || E <- ets:table(Edges), V <- ets:table(Vertices),
                        E#production.produces =:= ProductName, E#production.task =:= V#task.name ]),
-  FoundTasks = qlc:eval(TaskQ),
-  case length(FoundTasks) of
-    1 -> hd(FoundTasks);
-    0 -> {err, {no_task_produces, ProductName}};
-    _ -> {err, {violated_invariant, single_producer, ProductName, FoundTasks}}
-  end.
+  qlc:eval(TaskQ).
 
 
 % find_product_vertex(State, ProductName) ->
@@ -880,6 +873,7 @@ task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
 %   end.
 
 
+-ifdef(TEST).
 %%% Tests
 digraph_test_() ->
   ProductName = "x.out",
@@ -1055,3 +1049,4 @@ digraph_test_() ->
      end
     ]
   }.
+-endif.

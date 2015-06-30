@@ -13,7 +13,7 @@
 
 -export([parse/2, check/2, parse_and_check/2, format_error/2,
          usage/2, usage/3, usage/4, tokenize/1]).
--export([usage_cmd_line/2, usage_options/1, usage_options/2]).
+-export([usage_cmd_line/3, usage_cmd_line/2, usage_options/1, usage_options/2]).
 
 -define(LINE_LENGTH, 75).
 -define(MIN_USAGE_COMMAND_LINE_OPTION_LENGTH, 25).

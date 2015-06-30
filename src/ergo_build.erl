@@ -36,7 +36,7 @@
 
 -spec start(ergo:workspace_name(), integer(), [ergo:target()]) -> ok.
 start(Workspace, BuildId, Targets) ->
-  gen_server:start(?VIA(Workspace, BuildId), ?MODULE, {Workspace, BuildId, Targets}, []),
+  {ok, _} = gen_server:start(?VIA(Workspace, BuildId), ?MODULE, {Workspace, BuildId, Targets}, []),
   gen_server:call(?VIA(Workspace, BuildId), {build_start, Workspace, BuildId, something}).
 
 
@@ -100,7 +100,7 @@ handle_cast(_Request, State) ->
   {noreply, State}.
 
 handle_info(_Info, State) ->
-  {ok, State}.
+  {noreply, State}.
 
 
 terminate(_Reason, _State) ->
