@@ -193,7 +193,8 @@ handle_begin_task(#launch{fullexe=Command, args=Args, fresh=miss},
 process_launch_result(State=#state{cmdport={'EXIT', Reason}}) ->
   ergo_task_pool:task_concluded(no_change, {failed, Reason, []}),
   {stop, Reason, State};
-process_launch_result(State=#state{}) ->
+process_launch_result(State=#state{workspace=WS, build_id=Bid, name=Name}) ->
+  ergo_events:task_running(WS, Bid, Name),
   {noreply, State};
 process_launch_result(skipped) ->
   {stop, normal, #state{}};
@@ -254,7 +255,7 @@ exit_status(0, State) ->
 exit_status(Status, State) ->
   record_batch({err, {exit_status, Status}}, State).
 
-report_concluded({failed, RecordError}, _TaskResult) ->
+report_concluded({err, RecordError}, _TaskResult) ->
   ergo_task_pool:task_concluded(no_change, {failed, {record_error, RecordError}, []});
 report_concluded({ok, Changed}, TaskResult) ->
   ergo_task_pool:task_concluded(Changed, TaskResult).

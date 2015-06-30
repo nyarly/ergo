@@ -40,7 +40,6 @@ name_from_id(Id) ->
   gen_server:call(?SERVER, {name_for_id, Id}).
 
 id_from_name({Workspace,Role,Name}) ->
-  ct:pal("~p", [{Workspace, Role, Name}]),
   gen_server:call(?SERVER, {process_id, reg_key_for(Workspace,Role,Name)}).
 
 link_to(ViaTuple) ->

@@ -11,7 +11,7 @@
 
 -export([build_requested/2, build_start/3, build_completed/4, build_warning/3, build_notes_task_complete/5,
          requirement_noted/3, production_noted/3, disclaimed_production/4, task_generation/3,
-         graph_changed/1, graph_contradiction/4, task_init/3, task_started/3,
+         graph_changed/1, graph_contradiction/4, task_init/3, task_started/3, task_running/3,
          task_produced_output/4, task_failed/5, invalid_provenence/5,
          task_completed/3, task_changed_graph/3, task_skipped/3,
          task_invalid/4, tasks_joint/3, tasks_ordered/3]).
@@ -75,6 +75,10 @@ task_init(Workspace, BuildId, Task) ->
 -spec(task_started(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
 task_started(Workspace, BuildId, Task) ->
   send_event(Workspace, {task_started, BuildId, Task}).
+
+-spec(task_running(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+task_running(Workspace, BuildId, Task) ->
+  send_event(Workspace, {task_running, BuildId, Task}).
 
 %% @spec:	task_produced_output(task::ergo:task()) -> ok.
 %% @end

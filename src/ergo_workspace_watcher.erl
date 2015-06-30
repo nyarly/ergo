@@ -18,7 +18,8 @@
           build_task_done      = report,
           task_generation      = report,
            task_init            = silent,
-          task_started         = report,
+           task_started         = silent,
+          task_running         = report,
            task_completed       = silent,
           task_skipped         = report,
           task_invalid         = report,
@@ -109,6 +110,7 @@ tagged_event(_, Event, #state{build_completed=silent})       when element(1, Eve
 tagged_event(_, Event, #state{task_init=silent})             when element(1, Event) =:= task_init             -> ok;
 tagged_event(_, Event, #state{task_generation=silent})       when element(1, Event) =:= task_generation       -> ok;
 tagged_event(_, Event, #state{task_started=silent})          when element(1, Event) =:= task_started          -> ok;
+tagged_event(_, Event, #state{task_running=silent})          when element(1, Event) =:= task_running          -> ok;
 tagged_event(_, Event, #state{task_completed=silent})        when element(1, Event) =:= task_completed        -> ok;
 tagged_event(_, Event, #state{task_skipped=silent})          when element(1, Event) =:= task_skipped          -> ok;
 tagged_event(_, Event, #state{task_invalid=silent})          when element(1, Event) =:= task_invalid          -> ok;
@@ -147,7 +149,10 @@ tagged_event(TagString, {task_generation, Bid, Tasklist}, #state{task_generation
   io:format("~s(ergo:~p): new task generation: ~s ~n", [TagString, Bid, join_iolist([join_iolist(Task," ") || Task <- Tasklist],", ")]);
 
 tagged_event(TagString, {task_started, Bid, {task, TaskName}}, #state{task_started=report}) ->
-  io:format("~s(ergo:~p): start: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
+  build_tagged_message(TagString, Bid, [<<"start: ">>, ?tn(TaskName)]);
+
+tagged_event(TagString, {task_running, Bid, TaskName}, #state{task_running=report}) ->
+  build_tagged_message(TagString, Bid, [<<"running: ">>, ?tn(TaskName)]);
 
 tagged_event(TagString, {task_completed, Bid, {task, TaskName}}, #state{task_completed=report}) ->
   io:format("~s(ergo:~p): done: ~s ~n", [TagString, Bid, [[Part, " "] || Part <- TaskName]]);
@@ -164,7 +169,7 @@ tagged_event(TagString, {task_changed_graph, Bid, {task, TaskName}}, #state{task
 tagged_event(_TagString, {task_produced_output, _Bid, {task, TaskName}, Outlist}, #state{task_produced_output=report}) ->
   io:format("~p: ~s", [TaskName, Outlist]);
 
-tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, {output, OutString}}, #state{task_failed=report}) ->
+tagged_event(TagString, {task_failed, Bid, {task, TaskName}, Exit, OutString}, #state{task_failed=report}) ->
   build_tagged_message(TagString, Bid,
                        [?tn(TaskName), <<" failed ">>, format_error(Exit), <<"\nOutput: \n">>, OutString]);
 
@@ -208,7 +213,7 @@ disclaimer_message({disclaim, {prod, About, Product}, Mistaken}) ->
    <<" although other tasks claim that it does: ">>, [ [<<"\n    ">>, ?tn(Oops)] || Oops <- Mistaken ]].
 
 build_tagged_message(TagString, Bid, IoList) ->
-  io:write([TagString, build_tag(Bid), IoList, <<"\n">>]).
+  io:format("~s", [[TagString, build_tag(Bid), IoList, <<"\n">>]]).
 
 pfmt(Term) ->
   io_lib:format("~p", [Term]).
