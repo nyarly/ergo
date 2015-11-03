@@ -1,0 +1,2 @@
+#!/bin/bash
+ergo-taskfile -p middle.txt -t tasks/one

@@ -1,0 +1,6 @@
+#!/bin/bash
+ergo-dep -af tasks/bootstrap
+ergo-taskfile -r child/b.txt
+ergo-taskfile -p out.txt
+
+cp child/b.txt out.txt

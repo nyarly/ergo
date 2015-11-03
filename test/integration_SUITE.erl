@@ -199,6 +199,22 @@ two_tasks(Config) ->
 
   ok.
 
+child_project() ->
+  [].
+child_project(Config) ->
+  Workspace = [proplists:get_value(priv_dir, Config), "child_project/project"],
+  ergo:watch(Workspace),
+
+  {ok, {build_id, Id}} = ergo:run_build(Workspace, [{task, [<<"tasks/three">>]}]),
+  ergo_api:wait_on_build(Workspace, Id),
+  match_dir([proplists:get_value(priv_dir, Config), "child_project/result"], Workspace),
+
+  {ok, {build_id, Id2}} = ergo:run_build(Workspace, [{task, [<<"tasks/three">>]}]),
+  ergo_api:wait_on_build(Workspace, Id2),
+  match_dir([proplists:get_value(priv_dir, Config), "child_project/result"], Workspace),
+
+  ok.
+
 invalid_task() ->
   [].
 invalid_task(Config) ->
