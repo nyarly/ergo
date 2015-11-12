@@ -1,2 +1,3 @@
 #!/bin/bash
-ergo-taskfile -p middle.txt -t tasks/one
+ergo-dep -a child/tasks/bootstrap
+ergo-taskfile -p child/a.txt -t tasks/one

@@ -94,7 +94,7 @@ handle_cast({build_completed}, State) ->
   {stop, {shutdown, complete}, State};
 handle_cast({task_exit, Task, GraphChange, Outcome, Remaining}, State) ->
   {noreply,
-   handle_task_exited( Task, GraphChange, Outcome, Remaining,
+   handle_task_exited( Task, Outcome, Remaining,
                        handle_graph_changes(GraphChange, State)) };
 handle_cast(_Request, State) ->
   {noreply, State}.
@@ -137,13 +137,15 @@ handle_graph_changes(changed, State) ->
 handle_graph_changes(no_change, State) ->
   State.
 
-handle_task_exited(_Task, no_change, {failed, Reason, _Output}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
+handle_task_exited(Task,  {failed, _Reason, _Output}, Remaining, State=#state{build_spec=out_of_date}) ->
+  task_completed(Task, Remaining, State);
+handle_task_exited(_Task, {failed, Reason, _Output}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
   build_completed(WS, Bid, false, {task_failed, Reason}),
   State;
-handle_task_exited(_Task, _, {invalid, Message}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
+handle_task_exited(_Task, {invalid, Message}, _, State=#state{workspace_dir=WS, build_id=Bid}) ->
   build_completed(WS, Bid, false, {task_invalid, Message}),
   State;
-handle_task_exited(Task, _, _, Remaining, State) ->
+handle_task_exited(Task,  _, Remaining, State) ->
   task_completed(Task, Remaining, State).
 
 task_completed(Task, Waiting, State = #state{build_spec=BSpec, run_counts= RunCounts, complete_tasks=CompleteTasks}) ->

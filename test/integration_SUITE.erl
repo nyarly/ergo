@@ -18,20 +18,24 @@ suite() ->
 init_per_suite(Config) ->
   dbg:tracer(),
   %{ok, _} = dbg:tpl(ergo_cli, taskfile, []),
-  %{ok, _} = dbg:tpl(ergo_api, []),
-  %{ok, _} = dbg:tpl(ergo_task,  [{'_',[],[{return_trace}]}]),
-  %{ok, _} = dbg:tpl(ergo_task, []),
+  %{ok, _} = dbg:tp(ergo_api, []),
+  %{ok, _} = dbg:tpl(ergo_task, []), %[{'_',[],[{return_trace}]}]),
+  %{ok, _} = dbg:tpl(ergo_task, reparent_item, [{'_',[],[{return_trace}]}]),
+  %{ok, _} = dbg:tpl(ergo_task, reparent_task, [{'_',[],[{return_trace}]}]),
+  %{ok, _} = dbg:tpl(ergo_freshness, check, [{'_',[],[{return_trace}]}]),
+
   %{ok, _} = dbg:tp(ergo_task_pool, []),
   %{ok, _} = dbg:tpl(ergo_task, []),
   %{ok, _} = dbg:tpl(ergo_build, []),
   %{ok, _} = dbg:tpl(ergo_build,handle_event, [{['$1','$2'], [{'=/=', {'element', 1, '$1'}, task_produced_output}], []}]),
   %{ok, _} = dbg:tpl(ergo_build,start_tasks, []),
+  %{ok, _} = dbg:tpl(ergo_graphs,build_list, [{'_',[],[{return_trace}]}]),
   %{ok, _} = dbg:tpl(ergo_build,start_task, 5, []),
 %  {ok, _} = dbg:tpl(ergo_build,task_changed_graph, []),
 %  {ok, _} = dbg:tpl(ergo_build,task_completed, []),
-  %j
   %{ok, _} = dbg:tpl(ergo_freshness,[]),
   %{ok, _} = dbg:tpl(ergo_freshness,digest_list, [{'_',[],[{return_trace}]}]),
+  %{ok,_} = dbg:tpl(ergo_graphs,task_batch,[]),
   dbg:p(all,c),
   process_flag(trap_exit,true),
   DataDir = proplists:get_value(data_dir, Config),
@@ -73,7 +77,7 @@ groups() ->
   [].
 
 all() ->
-  [root_task, two_tasks, invalid_task, missing_script, disclaimed_production].
+  [root_task, two_tasks, child_project, invalid_task, missing_script, disclaimed_production].
 
 %%--
 %% HELPERS
@@ -283,6 +287,8 @@ disclaimed_production(Config) ->
 %%% * Failed build
 %%% * Empty config
 %%% * Missing task file
+%%% * Graph contradiction (known issue)
+%%% * Disclaimer (handled already?)
 %%%
 %%% Variations on two-task
 %%% * file-file dep (i.e. out.txt -> in.txt)

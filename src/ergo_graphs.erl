@@ -658,9 +658,14 @@ first_singular_task([EdgeId | Rest], Edges) ->
 first_singular_task([], _Edges) ->
   none.
 
+% XXX Concerned here that this function only gets used if an invariant has been violated...
+most_edges([], _) ->
+  none;
 most_edges([Task | Rest], Tasks) ->
   most_edges(Rest, Tasks, Task, length(dict:fetch(Task, Tasks))).
 
+most_edges([], _, Chosen, _) ->
+  Chosen;
 most_edges([Task | Rest], Dict, Chosen, Count) ->
   NewCount = length(dict:fetch(Task, Dict)),
   if Count < NewCount -> most_edges(Rest, Dict, Task, NewCount);

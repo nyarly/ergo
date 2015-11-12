@@ -28,6 +28,7 @@
           task_failed          = report,
           invalid_provenence   = report,
            disclaimed_production= silent,
+           graph_contradiction = report,
           unknown_event        = report
          }).
 
@@ -120,6 +121,7 @@ tagged_event(_, Event, #state{task_produced_output=silent})  when element(1, Eve
 tagged_event(_, Event, #state{task_failed=silent})           when element(1, Event) =:= task_failed           -> ok;
 tagged_event(_, Event, #state{invalid_provenence=silent})    when element(1, Event) =:= invalid_provenence    -> ok;
 tagged_event(_, Event, #state{disclaimed_production=silent}) when element(1, Event) =:= disclaimed_production -> ok;
+tagged_event(_, Event, #state{graph_contradiction=silent})   when element(1, Event) =:= graph_contradiction   -> ok;
 
 tagged_event(TagString, {graph_changed}, #state{graph_changed=report}) ->
   io:format("~n~s(ergo): graph changed", [TagString]);
@@ -191,6 +193,18 @@ tagged_event(TagString, {disclaimed_production, Bid, _Task, DisclaimerList}, #st
     end, DisclaimerList);
 
 
+%{graph_contradiction,0,
+%    [<<"child/tasks/two">>],
+%    {single_producer,"child/b.txt",
+%        [{[<<"child/tasks/bootstrap">>],
+%          {prod,[<<"child/tasks/two">>],"child/b.txt"}},
+%         {[<<"child/tasks/two">>],
+%          {prod,[<<"child/child/tasks/two">>],"child/b.txt"}}]}}
+tagged_event(TagString, {graph_contradiction, Bid, _Task, Contradiction}, #state{graph_contradiction=report}) ->
+  build_tagged_message(TagString, Bid, contradiction_message(Contradiction));
+
+
+
 tagged_event(TagString, {invalid_provenence, Bid, About, Asserter, Stmt}, #state{invalid_provenence=report}) ->
   build_tagged_message(TagString, Bid,
                        [<<"Invalid task ">>,format_task(About),<<" drawn into graph by statement: <<">>,
@@ -202,11 +216,21 @@ tagged_event(TagString, Event, #state{unknown_event=report}) ->
 tagged_event(_, _, _) ->
   ok.
 
+
 format_error({record_error, {disclaimed_production, DisclaimerList}}) ->
   [ disclaimer_message(Disclaimer) || Disclaimer <- DisclaimerList ];
 format_error(Error) ->
   ?pf(Error).
 
+contradiction_message({ single_producer, Product, Claims }) ->
+  [<<"Every product can have at most one producing task, but ">>, ?pf(Product),<<" has multiple candidates:">>,
+   [ [<<"\n  ">>,?tn(Claimer),<<" claims that ">>,?tn(Claimed),<<" produces ">>,?pf(Product)] ||
+     { Claimer, { prod, Claimed, _ }} <- Claims ],
+   <<"\n">>];
+contradiction_message(Event = { unique_fresh_taskmeta, _Product, _Claims }) ->
+  pfmt(Event);
+contradiction_message(Event = { unique_fresh_filemeta, _Product, _Claims }) ->
+  pfmt(Event).
 
 disclaimer_message({disclaim, {prod, About, Product}, Mistaken}) ->
   [<<"Task ">>,?tn(About),<<" doesn't report producing ">>, ?pf(Product),

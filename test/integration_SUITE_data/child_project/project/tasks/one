@@ -1,6 +1,6 @@
 #!/bin/bash
 ergo-dep -af tasks/bootstrap
 ergo-taskfile -r in.txt
-ergo-taskfile -p middle.txt
+ergo-taskfile -p child/a.txt
 
-cp in.txt middle.txt
+cp in.txt child/a.txt

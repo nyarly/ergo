@@ -48,12 +48,9 @@ run_tasks(usage) ->
   {  "TASK",
    [{"TASK", "all arguments are treated as the task to run"}]}.
 run_tasks(Workspace, ReporterId, Options, Args) ->
-  FirstTask = ergo_task:taskname_from_token(ReporterId),
   SecondTask = [ list_to_binary(Part) || Part <- Args],
-
-  maybe_cotasks(proplists:get_bool(also,  Options), proplists:get_bool('when',  Options), Workspace, ReporterId, FirstTask, SecondTask),
-
-  maybe_deps(proplists:get_bool(preceed,  Options), proplists:get_bool(follow,  Options),Workspace, ReporterId, FirstTask, SecondTask).
+  maybe_cotasks(proplists:get_bool(also,  Options), proplists:get_bool('when',  Options), Workspace, ReporterId, self, SecondTask),
+  maybe_deps(proplists:get_bool(preceed,  Options), proplists:get_bool(follow,  Options),Workspace, ReporterId, self, SecondTask).
 
 run_taskfile(spec) ->
   [
@@ -70,7 +67,7 @@ run_taskfile(Workspace, ReporterId, Options, Args) ->
   {Files,Taskname} = case proplists:get_bool(other, Options) of
                true -> [File|Rest] = Args,
                        {[File], [list_to_binary(Part) || Part <- Rest]};
-               false -> {Args, ergo_task:taskname_from_token(ReporterId)}
+               false -> {Args, self}
              end,
   [maybe_filedep(proplists:get_bool(require,Options),proplists:get_bool(produce,Options),
                 Workspace, ReporterId, Taskname, File) || File <- Files].

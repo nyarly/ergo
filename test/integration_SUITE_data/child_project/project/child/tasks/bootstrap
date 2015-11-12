@@ -1,0 +1,2 @@
+#!/bin/bash
+ergo-taskfile -p b.txt -t tasks/two

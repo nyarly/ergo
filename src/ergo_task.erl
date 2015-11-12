@@ -1,4 +1,10 @@
 -module(ergo_task).
+
+-define(NOTEST, true).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -behavior(gen_server).
 %% API
 -export([current/0, taskname_from_token/1, start/4, start_link/4, task_name/1,
@@ -15,8 +21,10 @@
 
 -record(state, {
           workspace,
+          build_workspace,
           build_id,
           name,
+          build_name,
           config,
           cmdport,
           output=[],
@@ -79,9 +87,11 @@ begin_task(Workspace, Taskname) ->
 
 %%% gen_server callbacks
 
-init({TaskName, WorkspaceDir, BuildId, Config}) ->
-  begin_task(WorkspaceDir, TaskName),
-  {ok, #state{workspace=WorkspaceDir, build_id=BuildId, name=TaskName, config=Config}}.
+init({BaseTaskName, BuildWorkspaceDir, BuildId, Config}) ->
+  {WorkspaceDir, TaskName} = reparent_task(BaseTaskName, BuildWorkspaceDir),
+  begin_task(BuildWorkspaceDir, BaseTaskName),
+  {ok, #state{build_workspace=BuildWorkspaceDir, workspace=WorkspaceDir, build_id=BuildId, build_name=BaseTaskName, name=TaskName, config=Config}}.
+
 
 handle_call(task_name, _From, State) ->
   {reply, State#state.name, State};
@@ -163,7 +173,7 @@ handle_begin_task(#launch{fresh=hit}, _State) ->
   ergo_task_pool:task_concluded(no_change, skipped),
   skipped;
 
-handle_begin_task(Launch=#launch{fresh=undefined}, State=#state{workspace=WS, name=Task}) ->
+handle_begin_task(Launch=#launch{fresh=undefined}, State=#state{build_workspace=WS, build_name=Task}) ->
   handle_begin_task(
     Launch#launch{ fresh=ergo_freshness:check(WS, Task) }, State
    );
@@ -177,11 +187,11 @@ handle_begin_task(Launch=#launch{fullexe=undefined,relname=RelName}, State=#stat
    );
 
 handle_begin_task(#launch{fullexe=Command, args=Args, fresh=miss},
-                  State=#state{workspace=Dir, name=TaskName, config=Config, cmdport=undefined}) ->
+                  State=#state{build_workspace=BWS, workspace=Dir, build_name=BuildName, name=TaskName, config=Config, cmdport=undefined}) ->
   PortConfig= [
            {arg0, hd(TaskName)},
            {args, Args},
-           {env, task_env(Dir, TaskName, Config)},
+           {env, task_env(BWS, BuildName, Config)},
            {cd, Dir},
            exit_status,
            use_stdio,
@@ -193,7 +203,7 @@ handle_begin_task(#launch{fullexe=Command, args=Args, fresh=miss},
 process_launch_result(State=#state{cmdport={'EXIT', Reason}}) ->
   ergo_task_pool:task_concluded(no_change, {failed, Reason, []}),
   {stop, Reason, State};
-process_launch_result(State=#state{workspace=WS, build_id=Bid, name=Name}) ->
+process_launch_result(State=#state{build_workspace=WS, build_id=Bid, build_name=Name}) ->
   ergo_events:task_running(WS, Bid, Name),
   {noreply, State};
 process_launch_result(skipped) ->
@@ -206,7 +216,7 @@ process_launch_result(Reason) ->
 add_item(State=#state{graphitems=GraphItems}, Item) ->
   State#state{graphitems=[Item | GraphItems]}.
 
-kill_self(#state{workspace=WS,name=T}) ->
+kill_self(#state{build_workspace=WS,name=T}) ->
   gen_server:cast(?VT(WS, T), kill).
 
 skipped(State) ->
@@ -214,7 +224,7 @@ skipped(State) ->
   kill_self(State),
   State#state{skipped=true}.
 
-report_invalid(Message, State=#state{workspace=WS, build_id=B, name=Task}) ->
+report_invalid(Message, State=#state{build_workspace=WS, build_id=B, name=Task}) ->
   ergo_task_pool:task_concluded(no_change, {invalid, Message}),
   ergo_graphs:task_invalid(WS, B, Task),
   State.
@@ -226,13 +236,13 @@ become_invalid(Message, State) ->
   State#state{invalid=true}.
 
 -spec(task_env(ergo:workspace_name(), ergo:taskname(), [{atom(), term()}]) -> [{string(), string()}]).
-task_env(Workspace, TaskName, Config) ->
+task_env(BuildWS, TaskName, Config) ->
   [
    {"ERL_CALL", filename:join(code:lib_dir(erl_interface, bin),"erl_call")},
    {"ERGO_NODE", atom_to_list(node())},
-   {"ERGO_WORKSPACE", Workspace},
+   {"ERGO_WORKSPACE", BuildWS},
    {"PATH", task_path(Config)},
-   {?ERGO_TASK_ENV, binary_to_list(ergo_workspace_registry:id_from_name({Workspace, task, TaskName}))}
+   {?ERGO_TASK_ENV, binary_to_list(ergo_workspace_registry:id_from_name({BuildWS, task, TaskName}))}
   ].
 
 task_path(Config) ->
@@ -241,7 +251,7 @@ task_path(Config) ->
      proplists:get_value(path,Config,[])],
     ":").
 
-received_data(State=#state{workspace=Workspace,build_id=BuildId, name=Name,output=Output}, Data) ->
+received_data(State=#state{build_workspace=Workspace,build_id=BuildId, build_name=Name,output=Output}, Data) ->
   ergo_events:task_produced_output(Workspace, BuildId, {task, Name}, Data),
   State#state{output=[Data|Output]}.
 
@@ -260,20 +270,135 @@ report_concluded({err, RecordError}, _TaskResult) ->
 report_concluded({ok, Changed}, TaskResult) ->
   ergo_task_pool:task_concluded(Changed, TaskResult).
 
+reparent_task([BaseTaskScript|TaskArgs], BuildWorkspaceDir) ->
+  % TODO this a larger issue, but need to make sure we're handling unicode properly
+  AbsTaskName = filename:join(BuildWorkspaceDir, BaseTaskScript),
+  WorkspaceDir = ergo_workspace:find_dir(filename:dirname(AbsTaskName)),
+  RelTaskScript = relative_path(WorkspaceDir, AbsTaskName),
+  TaskName = [RelTaskScript|TaskArgs],
+  {binary:bin_to_list(WorkspaceDir), TaskName}.
+
+reparent_items(WS, WS, Taskname, Items) ->
+  [ unself_item(Taskname, Item) || Item <- Items];
+reparent_items(BuildWS, TaskWS, Taskname, Items) ->
+  RelDir = relative_path(BuildWS, TaskWS),
+  [ unself_item(Taskname, reparent_item(RelDir, Item)) || Item <- Items ].
+
+reparent_item(Dir, {dep, First, Second})  -> {dep,  reparent_filename(Dir, First), reparent_filename(Dir, Second)};
+reparent_item(Dir, {prod, First, Second}) -> {prod, reparent_taskname(Dir, First), reparent_filename(Dir, Second)};
+reparent_item(Dir, {req, First, Second})  -> {req,  reparent_taskname(Dir, First), reparent_filename(Dir, Second)};
+reparent_item(Dir, {co, First, Second})   -> {co,   reparent_taskname(Dir, First), reparent_taskname(Dir, Second)};
+reparent_item(Dir, {seq, First, Second})  -> {seq,  reparent_taskname(Dir, First), reparent_taskname(Dir, Second)}.
+
+unself_item(Taskname, {prod, self, Second}) -> {prod, Taskname, Second};
+unself_item(Taskname, {req, self, Second} ) -> {req, Taskname, Second} ;
+unself_item(Taskname, {co, self, Second}  ) -> unself_item(Taskname,{co, Taskname, Second})  ;
+unself_item(Taskname, {co, First, self}  )  -> {co, First, Taskname}  ;
+unself_item(Taskname, {seq, self, Second} ) -> unself_item(Taskname,{seq, Taskname, Second}) ;
+unself_item(Taskname, {seq, First, self} )  -> {seq, First, Taskname} ;
+unself_item(_, Item)                        -> Item.
+
+reparent_filename(Dir, Name) ->
+  filename:join(Dir, Name).
+
+reparent_taskname(_Dir, self) ->
+  self;
+reparent_taskname(Dir, [Script | Args]) ->
+  [filename:join(Dir, Script) | Args].
+
+relative_path(Dir, Dir) ->
+  <<"">>;
+relative_path(From, To) ->
+  {ok, Path} = relpath(filename:split(From), filename:split(To)),
+  Path.
+
+relpath([], To) ->
+  {ok, filename:join(To)};
+relpath(From, []) ->
+  {err, {not_under, From, []}};
+relpath([Part | FromR], [Part | ToR]) ->
+  relpath(FromR, ToR);
+relpath(From, To) ->
+  {err, {not_under, From, To}}.
+
 
 -spec(record_batch(ok | term(), #state{}) -> outcome()).
 record_batch(_, #state{invalid=true}) ->
   ok;
 record_batch(_, #state{skipped=true}) ->
   ergo_task_pool:task_concluded(no_change, skipped);
-record_batch(ok, #state{workspace=WS, build_id=Bid, name=Name, graphitems=Graph}) ->
-  ergo_freshness:store(WS, Name),
+record_batch(ok, #state{build_workspace=BWS, workspace=WS, build_id=Bid, build_name=BName, graphitems=Graph}) ->
+  ergo_freshness:store(BWS, BName),
   report_concluded(
-    ergo_graphs:task_batch(WS, Bid, Name, Graph, true),
+    ergo_graphs:task_batch(BWS, Bid, BName, reparent_items(BWS, WS, BName, Graph), true),
     success
    );
-record_batch(Error, #state{workspace=Workspace, build_id=BuildId, name=Name, graphitems=Graph, output=Output}) ->
+record_batch(Error, #state{build_workspace=BWS, workspace=Workspace, build_id=BuildId, build_name=BName, graphitems=Graph, output=Output}) ->
   report_concluded(
-    ergo_graphs:task_batch(Workspace, BuildId, Name, Graph, false),
+    ergo_graphs:task_batch(BWS, BuildId, BName, reparent_items(BWS, Workspace, BName, Graph), false),
     {failed, Error, lists:flatten(lists:reverse(Output))}
    ).
+
+-ifdef(TEST).
+task_test_() ->
+  BuildWS = "/from/the/root",
+  ChildWS = "/from/the/root/a/child",
+  TaskA = [<<"tasks/a">>,<<"one">>],
+  TaskB = [<<"tasks/b">>,<<"two">>],
+  FileA = "a.txt",
+  FileB = "b.txt",
+  Items = [
+           {dep, FileA, FileB},
+           {prod, TaskA, FileA},
+           {req, TaskA, FileA},
+           {co, TaskA, TaskB},
+           {seq, TaskA, TaskB}
+          ],
+  {
+   foreach,
+   fun() -> %setup
+       dbg:tracer(),
+       dbg:p(all,c),
+       {}
+   end,
+   fun(_) -> %teardown
+       dbg:ctp(),
+       dbg:p(all, clear)
+   end,
+   [
+    fun(_) ->
+        {
+         "No change if task and build are in same workspace",
+         ?_test(begin
+                  Reparented = reparent_items(BuildWS, BuildWS, TaskA, Items),
+                  lists:foreach(fun({{_, NewA, NewB}, {_, OldA, OldB}}) ->
+                                    NewA = OldA, NewB = OldB
+                                end, lists:zip(Reparented, Items))
+                end)
+        }
+    end,
+    fun(_) ->
+        {
+         "Rewrite paths if the task is under the build workspace",
+         ?_test(begin
+                  Reparented = reparent_items(BuildWS, ChildWS, TaskA, Items),
+                  FixedFileA = "a/child/a.txt",
+                  FixedFileB = "a/child/b.txt",
+                  FixedTaskA = [<<"a/child/tasks/a">>,<<"one">>],
+                  FixedTaskB = [<<"a/child/tasks/b">>,<<"two">>],
+                  FixedItems = [
+                                {dep, FixedFileA, FixedFileB},
+                                {prod, TaskA, FixedFileA},
+                                {req, TaskA, FixedFileA},
+                                {co, TaskA, FixedTaskB},
+                                {seq, TaskA, FixedTaskB}
+                               ],
+                  lists:foreach(fun({{_, NewA, NewB}, {_, OldA, OldB}}) ->
+                                    ?assertEqual(NewA,OldA), ?assertEqual(NewB, OldB)
+                                end, lists:zip(FixedItems, Reparented))
+                end)
+        }
+    end
+   ]
+  }.
+-endif.
