@@ -1,4 +1,4 @@
-#ergo
+# ergo
 
 `ergo` is a build orchestrator. It's purpose is to manage and sequence the many
 tasks that are part of any moderately sized software project.
