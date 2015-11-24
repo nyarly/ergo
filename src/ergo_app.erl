@@ -13,7 +13,7 @@ stop(_State) ->
   ok.
 
 start_distribution() ->
-  _Hack = os:cmd("epmd -daemon"),  %dirty hack to make sure epmd is running
+  _Hack = os:cmd("epmd -daemon"),  % XXX dirty hack to make sure epmd is running
   case net_kernel:start([ergo_config:node_name(), shortnames]) of
     {ok, Pid} -> {ok, Pid};
     {error, {already_started, Pid}} -> {ok, Pid};
