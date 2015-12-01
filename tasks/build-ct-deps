@@ -5,3 +5,4 @@ DEPS_DIR=deps
 ALL_TEST_DEPS_DIRS=$(addprefix $(DEPS_DIR)/,$(TEST_DEPS))
 build-ct-deps: $(ALL_TEST_DEPS_DIRS)
 	@for dep in $(ALL_TEST_DEPS_DIRS) ; do $(MAKE) -C $$dep; done
+

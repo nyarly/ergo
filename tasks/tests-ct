@@ -24,3 +24,4 @@ ct_run \
   -pa $(realpath ebin) ${DEPS_DIR}/*/ebin \
   -dir test -logdir logs -suite $SUITE \
   ${CT_OPTS:=} -erl_args -sname $SUITE_NAME | tee $RESULTS || echo "failed" >> $RESULTS
+

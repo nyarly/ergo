@@ -18,3 +18,4 @@ MODULES=$(cat rosters/names.txt | sed "s/.*/'\0',/" | tr -d '\n' | sed 's/,$//')
 grep -Eq '^[^%]*{modules,' $SOURCE #Need an empty modules entry in src/PROJECT.app.src
 
 sed "s/{modules,[[:space:]]*\[\]}/{modules, \[${MODULES}\]}/" < $SOURCE > $TARGET
+

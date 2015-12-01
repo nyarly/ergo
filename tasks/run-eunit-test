@@ -18,3 +18,4 @@ erl -noshell -pa . -pa ebin -eval "ok = eunit:test({file, \"$EUNIT_BEAM\"}, [ver
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   echo "failed" >> $RESULTS
 fi
+

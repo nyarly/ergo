@@ -9,7 +9,9 @@ for f in $MODULE_NAMES; do
   scripts/filefrom log/results/eunit/$f tasks/run-eunit-test $f
 done
 
+
 for f in $MODULE_NAMES; do
   test -f log/results/eunit/$f
   tail -n 1 log/results/eunit/$f | grep -v failed
 done
+

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -ex
+
+ergo-dep -af tasks/all-eunit
+ergo-dep -af tasks/all-ct
+

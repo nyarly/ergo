@@ -51,3 +51,4 @@ else
     -dir test -logdir logs \
     ${CT_OPTS}
 fi
+

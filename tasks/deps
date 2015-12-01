@@ -10,3 +10,4 @@ deps:: $(ALL_DEPS_DIRS)
 			echo "include $(CURDIR)/erlang.mk" | $(MAKE) -f - -C $$dep ; \
 		fi ; \
 	done
+

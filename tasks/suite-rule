@@ -4,3 +4,4 @@ set -ex
 SUITE_NAME=${1:?Requires 1 arg: the suite name}
 
 ergo-taskfile --produces log/results/$SUITE_NAME --task tasks/test-ct $SUITE_NAME
+

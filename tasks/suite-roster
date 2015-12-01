@@ -6,3 +6,4 @@ ergo-taskfile --produces $suite_roster
 
 mkdir -p $(dirname $suite_roster)
 find test/ -type f -name \*_SUITE.erl -exec basename {} \; | sed 's/_SUITE.erl//' | sort > $suite_roster
+

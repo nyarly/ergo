@@ -21,3 +21,4 @@ done
 mkdir -p $(dirname $beam)
 
 erlc -v ${ERLC_OPTS} -o ${EUNIT_BEAM_DIR}/ -pa ebin/ -I include/ -DTEST $src
+

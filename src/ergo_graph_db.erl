@@ -479,17 +479,11 @@ targets_to_tasks(State, Targets) ->
 
 run_build_list(_State, Errors={error, _}) ->
   Errors;
-run_build_list(State, TargetTasks) ->
+run_build_list(State=#state{provenence=Prov}, TargetTasks) ->
   SeqGraph = seq_graph(State),
   AlsoGraph = also_graph(State),
 
-  TargetVertices = tasknames_to_vertices(AlsoGraph, TargetTasks),
-  BaseTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(TargetVertices, AlsoGraph)),
-  DeterminedBy = determining_edges(SeqGraph, AlsoGraph, BaseTasknames),
-  Endorsers = extra_endorser_tasks(DeterminedBy, BaseTasknames, State),
-
-  AllVertices = tasknames_to_vertices(AlsoGraph, TargetTasks ++ Endorsers),
-  NeededTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(AllVertices, AlsoGraph)),
+  NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
 
   SeqVs = digraph_utils:topsort(digraph_utils:subgraph(SeqGraph, tasknames_to_vertices(SeqGraph, NeededTasknames))),
   Specs = [{taskname_from_vertex(SeqGraph, TV),
@@ -497,6 +491,16 @@ run_build_list(State, TargetTasks) ->
            } || TV <- SeqVs ],
   digraph:delete(AlsoGraph), digraph:delete(SeqGraph),
   add_unknown_tasks(TargetTasks, Specs).
+
+also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov) ->
+  TargetVertices = tasknames_to_vertices(AlsoGraph, TargetTasks),
+  BaseTasknames = vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(TargetVertices, AlsoGraph)),
+  DeterminedBy = determining_edges(SeqGraph, AlsoGraph, BaseTasknames),
+  Endorsers = extra_endorser_tasks(DeterminedBy, BaseTasknames, Prov),
+
+  AllVertices = tasknames_to_vertices(AlsoGraph, TargetTasks ++ Endorsers),
+  vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(AllVertices, AlsoGraph)).
+
 
 add_unknown_tasks([], Specs) ->
   Specs;
@@ -515,7 +519,7 @@ maybe_add_task(Task, Specs, []) ->
 maybe_add_task(_Task, Specs, _Matched) ->
   Specs.
 
-extra_endorser_tasks(Edges, KnownTasks, State = #state{provenence=Prov}) ->
+extra_endorser_tasks(Edges, KnownTasks, Prov) ->
   {TaskDict, EdgeDict} = lists:foldl(fun(EdgeId, {TDict, EDict}) ->
                                          lists:foldl(fun(#provenence{task=Taskname}, {TaskDict, EdgeDict}) ->
                                                          {
@@ -526,10 +530,10 @@ extra_endorser_tasks(Edges, KnownTasks, State = #state{provenence=Prov}) ->
                                                      {TDict, EDict},
                                                      ets:lookup(Prov, EdgeId))
                                      end,
-                                     {dict:new(), dict:new()}, Edges -- edges_endorsed_by(State, KnownTasks)),
+                                     {dict:new(), dict:new()}, Edges -- edges_endorsed_by(Prov, KnownTasks)),
   reduced_endorser_set(TaskDict, EdgeDict, []).
 
-edges_endorsed_by(#state{provenence=Prov}, Tasklist) ->
+edges_endorsed_by(Prov, Tasklist) ->
   gb_sets:to_list(
     lists:foldl(fun(T, Set) ->
                     lists:foldl(fun(Id, S) -> gb_sets:add(Id, S) end,

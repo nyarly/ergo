@@ -19,3 +19,4 @@ for src in $(< rosters/source.txt); do
   echo $beam >> rosters/beam.txt
   echo $name >> rosters/names.txt
 done
+

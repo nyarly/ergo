@@ -22,3 +22,4 @@ done
 
 TEST_ERLC_OPTS="+debug_info +warn_export_vars +warn_shadow_vars +warn_obsolete_guard -DTEST=1 -DEXTRA=1" # +'{parse_transform, eunit_autoexport}'"
 erlc -v ${TEST_ERLC_OPTS} -o test/ $SOURCE -pa ebin/
+
