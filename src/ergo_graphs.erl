@@ -74,7 +74,7 @@ handle_call({build_list, Targets}, _From, State) ->
   {NewState, Result} = ergo_graph_db:handle_build_list(State,Targets),
   {reply, Result, NewState};
 handle_call({task_invalid, BuildId, Task}, _From, State) ->
-  {reply, ergo_graph_db:invalidate_task(BuildId, Task, State), State};
+  {reply, invalidate_task(BuildId, Task, State), State};
 handle_call({task_batch, BuildId, Task, Graph, Succeeded}, _From, OldState) ->
   State = ergo_graph_db:update_batch_id(OldState),
   {reply, ergo_graph_db:absorb_task_batch(BuildId, Task, Graph, Succeeded, State), State};
@@ -98,3 +98,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 %%%
+
+invalidate_task(BuildId, Task, State) ->
+  report_invalid_provenences( ergo_graph_db:remove_task(Task, State), Task, BuildId, State).
+
+report_invalid_provenences(EPs, Task, BuildId, #state{workspace=Workspace}) ->
+  [report_invalid_provenence(Workspace, BuildId, Task, EP) || EP <- EPs].
+
+-spec(report_invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), {edge_record(), #provenence{}}) -> ok).
+report_invalid_provenence(Workspace, BuildId, About, {Statement, Asserter}) ->
+  ergo_events:invalid_provenence(Workspace, BuildId, About, Asserter, Statement).

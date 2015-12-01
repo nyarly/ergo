@@ -18,7 +18,7 @@ resolve(TaskName, State) ->
   Disclaimers.
 
 clear_disclaimers(Disclaimers, State) ->
-  [ ergo_graphs:remove_statement(Statement, State) || {disclaim, Statement, _} <- Disclaimers ].
+  [ ergo_graph_db:remove_statement(Statement, State) || {disclaim, Statement, _} <- Disclaimers ].
 
 check(TaskName, #state{edges=Etab,provenence=Ptab}) ->
   Claims = production_claims(TaskName, Etab, Ptab),

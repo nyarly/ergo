@@ -2,23 +2,17 @@
 set -ex
 
 PROJECT=ergo
-SUITE_NAME=${1:?Missing argument 1(the suite to test)}
 DEPS_DIR=deps
-CT_OPTS=
+SUITE_NAME=${1:?$(ergo-task-invalid Missing argument 1 \(the suite to test\))}
 SUITE=${SUITE_NAME}_SUITE
 RESULTS=log/results/$SUITE_NAME
 
 #ergo-dep -af tasks/deps
 #ergo-dep -af tasks/build-ct-suites
 
-ergo-taskfile --requires ebin/${PROJECT}.app
-ergo-taskfile --produces ebin/${PROJECT}.app --task tasks/app
-
 ergo-dep -af tasks/requires-all-compiled $0 "$@"
-
-ergo-taskfile --requires test/${SUITE_NAME}_SUITE.beam
-ergo-taskfile --produces test/${SUITE_NAME}_SUITE.beam --task tasks/build-ct-suite ${SUITE_NAME}
-
+scripts/ergo-filefrom ebin/${PROJECT}.app tasks/app
+scripts/ergo-filefrom test/${SUITE_NAME}_SUITE.beam tasks/build-ct-suite ${SUITE_NAME}
 ergo-taskfile --produces $RESULTS
 
 test -d "test"
@@ -26,6 +20,6 @@ mkdir -p $(dirname $RESULTS)
 echo -n > $RESULTS
 ct_run \
   -no_auto_compile -noshell \
-  -pa $(realpath ebin) $(DEPS_DIR)/*/ebin \
+  -pa $(realpath ebin) ${DEPS_DIR}/*/ebin \
   -dir test -logdir logs -suite $SUITE \
-  ${CT_OPTS} > $RESULTS || echo "failed" >> $RESULTS
+  ${CT_OPTS:=} -erl_args -sname $SUITE_NAME | tee $RESULTS || echo "failed" >> $RESULTS

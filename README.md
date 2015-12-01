@@ -64,10 +64,11 @@ sequencing and uses it to parallelize the build process.
 
 Often, only part of the sources of build will change, and the products related
 to the changed source files are the only ones which need to be reproduced.
-`ergo` determines this by tracking digests of the various files, and only
-running tasks whose products are missing or where the digests don't match a
-known list. The result is much reduced build times, since we simply skip
-unnecessary work.
+
+`ergo` determines this by tracking "digests" (which happens to be a hash of the 
+file contents) of the various files, and only running tasks whose products are 
+missing or where the digests don't match a known list. The result is much 
+reduced build times, since we simply skip unnecessary work.
 
 The source file for each task is a implicit requirement of the task when
 considering elision, so `ergo` will still re-run a task if none of its

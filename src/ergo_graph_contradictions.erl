@@ -55,7 +55,7 @@ format_contradictions(List) ->
   [ format_contradiction(Contra) || Contra <- List ].
 
 format_contradiction(#contradiction{rule_name=Rule, subject=About, statements=List}) ->
-  {Rule, About, [{Prov#provenence.task, ergo_graphs:statement_for_edge(Edge)} ||
+  {Rule, About, [{Prov#provenence.task, ergo_graph_db:statement_for_edge(Edge)} ||
                  #endorsed_statement{statement=Edge, provenences=Provs} <- List, Prov <- Provs]}.
 
 fix_self_contradictions(Contras, State) ->

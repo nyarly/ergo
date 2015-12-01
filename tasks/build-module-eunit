@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -ex
+
+NAME=${1:?$(ergo-invalid-task No name specified to $0)}
+EUNIT_BEAM_DIR=ebin_test
+
+ERLC_OPTS="+debug_info +warn_export_all +warn_export_vars +warn_shadow_vars +warn_obsolete_guard" # +bin_opt_info +warn_missing_spec"
+
+src="src/${NAME}.erl"
+beam="$EUNIT_BEAM_DIR/${NAME}.beam"
+
+ergo-dep -af tasks/requires-all-compiled $0 "$@"
+ergo-taskfile --requires $src
+ergo-taskfile --produces $beam
+
+HEADERS=$(erlc -M -MP -MG $src | grep ':$' | grep -v '^/' | sed 's/:$//')
+for h in $HEADERS; do
+  ergo-taskfile --requires $h
+done
+
+mkdir -p $(dirname $beam)
+
+erlc -v ${ERLC_OPTS} -o ${EUNIT_BEAM_DIR}/ -pa ebin/ -I include/ -DTEST $src

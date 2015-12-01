@@ -388,14 +388,14 @@ task_test_() ->
                   FixedTaskB = [<<"a/child/tasks/b">>,<<"two">>],
                   FixedItems = [
                                 {dep, FixedFileA, FixedFileB},
-                                {prod, TaskA, FixedFileA},
-                                {req, TaskA, FixedFileA},
-                                {co, TaskA, FixedTaskB},
-                                {seq, TaskA, FixedTaskB}
+                                {prod, FixedTaskA, FixedFileA},
+                                {req, FixedTaskA, FixedFileA},
+                                {co, FixedTaskA, FixedTaskB},
+                                {seq, FixedTaskA, FixedTaskB}
                                ],
                   lists:foreach(fun({{_, NewA, NewB}, {_, OldA, OldB}}) ->
                                     ?assertEqual(NewA,OldA), ?assertEqual(NewB, OldB)
-                                end, lists:zip(FixedItems, Reparented))
+                                end, lists:zip(Reparented ,FixedItems))
                 end)
         }
     end

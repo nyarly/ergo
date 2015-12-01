@@ -1,0 +1,11 @@
+#! /bin/bash
+
+set -e
+
+FILE=${1:?$(ergo-task-invalid Can\'t use filefrom without a file argument)}
+shift
+if [ $# -le 0 ]; then
+  ergo-task-invalid Can\'t use filefrom without a task
+fi
+ergo-taskfile --requires $FILE
+ergo-taskfile --produces $FILE --task $@

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -ex
+
+PROJECT=ergo
+DEPS_DIR=deps
+MODULE_NAME=${1:?$(ergo-task-invalid Missing argument 1 \(the module to test\))}
+RESULTS=log/results/eunit/${MODULE_NAME}
+EUNIT_BEAM_DIR=ebin_test
+EUNIT_BEAM=$EUNIT_BEAM_DIR/${MODULE_NAME}.beam
+
+scripts/filefrom $EUNIT_BEAM tasks/build-module-eunit ${MODULE_NAME}
+ergo-taskfile --produces $RESULTS
+
+test -d "$EUNIT_BEAM_DIR"
+mkdir -p $(dirname $RESULTS)
+echo -n > $RESULTS
+erl -noshell -pa . -pa ebin -eval "ok = eunit:test({file, \"$EUNIT_BEAM\"}, [verbose]), init:stop(0)" | tee $RESULTS
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  echo "failed" >> $RESULTS
+fi

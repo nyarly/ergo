@@ -3,9 +3,12 @@
 -export([statement_for_edge/1, edge_for_statement/1, remove_statement/2]).
 %% gen_server callbacks
 
+
 -export([build_state/1, products/2, dependencies/2, handle_build_list/2,
-         invalidate_task/3, update_batch_id/1, absorb_task_batch/5,
+         remove_task/2, update_batch_id/1, absorb_task_batch/5,
          handle_get_metadata/2, cleanup_state/1]).
+
+-include("ergo_graphs.hrl").
 
 -define(NOTEST, true).
 -ifdef(TEST).
@@ -17,9 +20,6 @@
 absorb_task_batch(BuildId, Task, Graph, Succeeded, State) ->
   maybe_notify_changed(process_task_batch(Task, Graph, Succeeded, State), BuildId, Task, State).
 
-invalidate_task(BuildId, Task, State) ->
-  report_invalid_provenences( remove_task(Task, State), Task, BuildId, State).
-
 remove_task_provenences(Task, #state{provenence=Pvs}) ->
   qlc:eval(qlc:q([ets:delete_object(Pvs, Prv) || Prv=#provenence{task=T} <- ets:table(Pvs), T=:=Task])).
 
@@ -30,10 +30,6 @@ provenence_about_edges(EdgeList, #state{provenence=Pvs}) ->
 
 remove_edge_pairs(EPs, #state{edges=ETab, provenence=PTab}) ->
   [{ets:delete_object(ETab, Edge), ets:delete_object(PTab, Prv)} || {Edge, Prv} <- EPs].
-
--spec(report_invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), {edge_record(), #provenence{}}) -> ok).
-report_invalid_provenence(Workspace, BuildId, About, {Edge, #provenence{task=Asserter}}) ->
-  ergo_events:invalid_provenence(Workspace, BuildId, About, Asserter, statement_for_edge(Edge)).
 
 
 remove_task_by_name(TaskName, State=#state{vertices=Vs}) ->
@@ -51,7 +47,8 @@ remove_task(TaskName, State) ->
   remove_task_by_name(TaskName, State),
   _ = remove_task_provenences(TaskName, State),
   _ = remove_edge_pairs(InvProvs, State),
-  InvProvs.
+  _State = dump_to(State),
+  [{statement_for_edge(Edge), Asserter} || {Edge, #provenence{task=Asserter}} <- InvProvs].
 
 edges_about_task(Task, State) ->
   qlc:eval( qlc:append(
@@ -80,11 +77,13 @@ requirement_about_task(Task, #state{edges=Es}) ->
 
 
 
-
-
-
 %%% Persistence
 %%%
+
+construct_state(WorkspaceRoot) ->
+  Workspace = filename:absname(WorkspaceRoot),
+  {ok,Regex} = re:compile(["^", filename:flatten(Workspace), "/"]),
+  #state{ workspace = Workspace, workspace_root_re = Regex }.
 
 build_state(WorkspaceRoot) ->
   build_state(WorkspaceRoot, protected).
@@ -864,6 +863,8 @@ digraph_test_() ->
                                                              {task_meta, TaskName,    fresh, digest}
 
                                                             ], true, State)),
+
+                  ergo_graph_contradictions:resolve( TaskName, State ),
                   ?assertEqual({[],[]},
                                ergo_graph_contradictions:resolve( TaskName, State )),
                   NewState = update_batch_id(State),

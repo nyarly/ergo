@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -ex
+
+roster=rosters/eunit_names.txt
+ergo-taskfile --produces $roster
+
+mkdir -p $(dirname $roster)
+find src/ -type f -name \*.erl -exec basename {} \; | sed 's/.erl$//' | sort > $roster

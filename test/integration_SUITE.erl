@@ -17,6 +17,7 @@ suite() ->
   ].
 init_per_suite(Config) ->
   dbg:tracer(),
+
   %{ok, _} = dbg:tpl(ergo_cli, taskfile, []),
   %{ok, _} = dbg:tp(ergo_api, []),
   %{ok, _} = dbg:tpl(ergo_task, []), %[{'_',[],[{return_trace}]}]),
