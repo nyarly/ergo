@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
 set -ex
-PARALLEL=no
+PARALLEL=yes
 
-if [ $PARALLEL = "yes" ]; then
-
+if [ $PARALLEL == "yes" ]; then
   scripts/ergo-filefrom rosters/suite_names.txt tasks/suite-roster
   SUITE_NAMES=$(< rosters/suite_names.txt)
 
@@ -16,11 +15,7 @@ if [ $PARALLEL = "yes" ]; then
     test -f log/results/$f
     tail -n 1 log/results/$f | grep -v failed
   done
-
 else
-
-  set -ex
-
   PROJECT=ergo
   ergo-taskfile --requires tasks/rosters/suite_names.txt
   ergo-taskfile --produces tasks/rosters/suite_names.txt --task tasks/suite-roster
@@ -34,14 +29,12 @@ else
   #ergo-dep -af tasks/deps
   #ergo-dep -af tasks/build-ct-suites
 
-  ergo-taskfile --requires ebin/${PROJECT}.app
-  ergo-taskfile --produces ebin/${PROJECT}.app --task tasks/app
+  scripts/filefrom ebin/${PROJECT}.app tasks/app
 
-  ergo-dep -af tasks/requires-all-compiled $0 "$@"
+  scripts/requires-all-compiled $0 "$@"
 
   for suite_name in ${SUITE_NAMES}; do
-    ergo-taskfile --requires test/${suite_name}_SUITE.beam
-    ergo-taskfile --produces test/${suite_name}_SUITE.beam --task tasks/build-ct-suite ${suite_name}
+    scripts/filefrom test/${suite_name}_SUITE.beam tasks/build-ct-suite ${suite_name}
   done
 
   ergo-taskfile --produces $RESULTS

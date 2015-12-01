@@ -3,8 +3,6 @@ set -ex
 
 exec &> >(tee log/tasks/app)
 
-env
-
 PROJECT=$(basename $(pwd))
 SOURCE=src/${PROJECT}.app.src
 TARGET=ebin/${PROJECT}.app
@@ -12,7 +10,7 @@ TARGET=ebin/${PROJECT}.app
 ergo-taskfile --requires $SOURCE
 ergo-taskfile --produces $TARGET
 
-ergo-dep -af tasks/requires-all-compiled $0 "$@"
+scripts/requires-all-compiled $0 "$@"
 ergo-taskfile --requires rosters/names.txt
 
 MODULES=$(cat rosters/names.txt | sed "s/.*/'\0',/" | tr -d '\n' | sed 's/,$//')

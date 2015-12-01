@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-set -ex
-
-exec &> >(tee log/tasks/requires-all)
 
 if [ $# -lt 1 ]; then
-  ergo-task-invalid "Needs the name of a task"
+  ergo-task-invalid "Called $0 without the name of a task"
 fi
 TASK=$(realpath ${@} | sed "s#^${ERGO_WORKSPACE}\(\/\)\?##")
 
@@ -12,9 +9,7 @@ if echo $TASK | grep '^/'; then
   ergo-task-invalid "Must use actual taskname (i.e. project rooted) not: ${TASK}"
 fi
 
-
-ergo-taskfile --requires rosters/beam.txt
-ergo-taskfile --produces rosters/beam.txt --task tasks/beam-chains
+scripts/filefrom rosters/beam.txt tasks/beam-chains
 for beam in $(< rosters/beam.txt); do
   ergo-taskfile --requires $beam --task $TASK
 done

@@ -9,7 +9,7 @@ ERLC_OPTS="+debug_info +warn_export_all +warn_export_vars +warn_shadow_vars +war
 src="src/${NAME}.erl"
 beam="$EUNIT_BEAM_DIR/${NAME}.beam"
 
-ergo-dep -af tasks/requires-all-compiled $0 "$@"
+scripts/requires-all-compiled $0 "$@"
 ergo-taskfile --requires $src
 ergo-taskfile --produces $beam
 

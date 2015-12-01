@@ -10,11 +10,12 @@ RESULTS=log/results/$SUITE_NAME
 #ergo-dep -af tasks/deps
 #ergo-dep -af tasks/build-ct-suites
 
-ergo-dep -af tasks/requires-all-compiled $0 "$@"
-scripts/ergo-filefrom ebin/${PROJECT}.app tasks/app
-scripts/ergo-filefrom test/${SUITE_NAME}_SUITE.beam tasks/build-ct-suite ${SUITE_NAME}
+scripts/requires-all-compiled $0 "$@"
+scripts/filefrom ebin/${PROJECT}.app tasks/app
+scripts/filefrom test/${SUITE_NAME}_SUITE.beam tasks/build-ct-suite ${SUITE_NAME}
 ergo-taskfile --produces $RESULTS
 
+unset  ERGO_NODE ERGO_TASK_ID ERGO_WORKSPACE
 test -d "test"
 mkdir -p $(dirname $RESULTS)
 echo -n > $RESULTS
