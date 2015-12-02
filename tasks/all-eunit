@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ex
+set -e
 
 scripts/ergo-filefrom rosters/eunit_names.txt tasks/eunit-roster
 MODULE_NAMES=$(< rosters/eunit_names.txt)
@@ -9,9 +9,19 @@ for f in $MODULE_NAMES; do
   scripts/filefrom log/results/eunit/$f tasks/run-eunit-test $f
 done
 
-
+FAILS=""
 for f in $MODULE_NAMES; do
-  test -f log/results/eunit/$f
-  tail -n 1 log/results/eunit/$f | grep -v failed
+  logfile=log/results/eunit/$f
+  test -f $logfile
+  if tail -n 1 $logfile | grep -q failed; then
+    FAILS="$FAILS $logfile"
+  fi
 done
 
+if [ ! -z $FAILS ]; then
+  echo "Failing eunit logs: " $FAILS
+  for f in $FAILS; do
+    cat $f
+  done
+  exit 1
+fi

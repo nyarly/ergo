@@ -7,6 +7,7 @@
 -export([build_state/1, products/2, dependencies/2, handle_build_list/2,
          remove_task/2, update_batch_id/1, absorb_task_batch/5,
          handle_get_metadata/2, cleanup_state/1]).
+-export([requirements_of_tasks/2, products_of_tasks/2, unproduced_requirements_of_tasks/2]).
 
 -include("ergo_graphs.hrl").
 
@@ -444,6 +445,13 @@ prod_deps(State, ProductName) ->
 task_deps(State, TaskName) ->
   qlc:eval(task_deps_query(State, TaskName)).
 
+tasks_deps(State, TaskNames) ->
+  qlc:eval(multi_task_deps_query(State, TaskNames)).
+
+tasks_products(State, Tasknames) ->
+  qlc:eval(tasks_products_query(State, Tasknames)).
+
+
 handle_get_metadata({task, Taskname}, State) ->
   get_task_metadata(Taskname, State);
 handle_get_metadata({produced, Product}, State) ->
@@ -501,6 +509,38 @@ also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov) ->
   AllVertices = tasknames_to_vertices(AlsoGraph, TargetTasks ++ Endorsers),
   vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(AllVertices, AlsoGraph)).
 
+products_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
+  SeqGraph = seq_graph(State),
+  AlsoGraph = also_graph(State),
+
+  NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
+  ordsets:to_list(product_set_from_tasks(NeededTasknames, State)).
+
+requirements_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
+  SeqGraph = seq_graph(State),
+  AlsoGraph = also_graph(State),
+
+  NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
+  ordsets:to_list(requirement_set_from_tasks(NeededTasknames, State)).
+
+unproduced_requirements_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
+  SeqGraph = seq_graph(State),
+  AlsoGraph = also_graph(State),
+
+  NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
+  ordsets:to_list(
+    ordsets:subtract(
+      requirement_set_from_tasks(NeededTasknames, State),
+      product_set_from_tasks(NeededTasknames, State)
+     )
+   ).
+
+
+requirement_set_from_tasks(Tasknames, State) ->
+  ordsets:from_list(tasks_deps(State, Tasknames)).
+
+product_set_from_tasks(Tasknames, State) ->
+  ordsets:from_list(tasks_products(State, Tasknames)).
 
 add_unknown_tasks([], Specs) ->
   Specs;
@@ -682,6 +722,25 @@ all_cotask_edges(State) ->
 prod_dep_query(#state{edges=Edges}, ProductName) ->
   qlc:q([ Dep#dep.to || Dep <- ets:table(Edges), Dep#dep.from =:= ProductName ]).
 
+-spec(multi_task_deps_query(#state{}, [taskname()]) -> qlc:query_handle()).
+multi_task_deps_query(State, TaskNames) ->
+  qlc:append([multi_explicit_task_req_query(State, TaskNames), multi_dep_implied_task_req_query(State, TaskNames)]).
+
+multi_explicit_task_req_query(#state{edges=Edges}, TaskNames) ->
+  qlc:q([Req || #requirement{task=T,requires=Req} <- ets:table(Edges), Tn <- TaskNames, T=:=Tn]).
+
+multi_dep_implied_task_req_query(#state{edges=Edges}, TaskNames) ->
+  qlc:q([To || #production{task=PT, produces=P1} <- ets:table(Edges),
+               #dep{from=P2, to=To} <- ets:table(Edges),
+               Tn <- TaskNames,
+               Tn =:= PT, P1 =:= P2 ]).
+
+tasks_products_query(#state{edges=Edges}, Tasknames) ->
+  qlc:q([ P1 || #production{task=PT, produces=P1} <- ets:table(Edges),
+                Tn <- Tasknames,
+                PT =:= Tn ]).
+
+%% XXX refactor as a special case of multi
 -spec(task_deps_query(#state{}, taskname()) -> qlc:query_handle()).
 task_deps_query(State, TaskName) ->
   qlc:append([explicit_task_req_query(State, TaskName), dep_implied_task_req_query(State, TaskName)]).
@@ -788,6 +847,9 @@ task_for_product(#state{edges=Edges,vertices=Vertices}, ProductName) ->
 %%% Tests
 digraph_test_() ->
   ProductName = "x.out",
+  ProductOne = "one.txt",
+  ProductTwo = "two.txt",
+  ProductThree = "three.txt",
   DependsOn = "x.in",
   TaskName = [<<"compile">>,  <<"x">>],
   OtherTaskName = [<<"test">>, <<"x">>],
@@ -959,6 +1021,57 @@ digraph_test_() ->
                    {_NewState,List} = handle_build_list(dump_to(State), [{product, ProductName}]),
                    ?assertEqual( [{OtherTaskName, []},{TaskName, [OtherTaskName]}], List)
                  end)
+     end,
+     fun(State) ->
+         {
+          "Task productions",
+          ?_test(begin
+                   process_task_batch(TaskName, [
+                                                 {prod, TaskName, ProductOne},
+                                                 {prod, TaskName, ProductTwo},
+                                                 {prod, OtherTaskName, ProductTwo},
+                                                 {prod, OtherTaskName, ProductThree}
+                                                ], true, State),
+                   ?assertEqual(
+                      lists:sort([ProductOne, ProductTwo, ProductThree]),
+                      lists:sort(products_of_tasks(State, [TaskName, OtherTaskName]))
+                     )
+                 end)
+         }
+     end,
+     fun(State) ->
+         {
+          "Task requirements",
+          ?_test(begin
+                   process_task_batch(TaskName, [
+                                                 {req, TaskName, ProductOne},
+                                                 {req, TaskName, ProductTwo},
+                                                 {req, OtherTaskName, ProductTwo},
+                                                 {req, OtherTaskName, ProductThree}
+                                                ], true, State),
+                   ?assertEqual(
+                      lists:sort([ProductOne, ProductTwo, ProductThree]),
+                      lists:sort(requirements_of_tasks(State, [TaskName, OtherTaskName]))
+                     )
+                 end)
+         }
+     end,
+     fun(State) ->
+         {
+          "Unproduced requirements",
+          ?_test(begin
+                   process_task_batch(TaskName, [
+                                                 {req, TaskName, ProductOne},
+                                                 {prod, TaskName, ProductTwo},
+                                                 {req, TaskName, ProductTwo},
+                                                 {prod, OtherTaskName, ProductThree}
+                                                ], true, State),
+                   ?assertEqual(
+                      lists:sort([ProductOne]),
+                      lists:sort(unproduced_requirements_of_tasks(State, [TaskName, OtherTaskName]))
+                     )
+                 end)
+         }
      end
     ]
   }.
