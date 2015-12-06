@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-set -ex
 PARALLEL=yes
 
 if [ $PARALLEL == "yes" ]; then
+  set -e
   scripts/ergo-filefrom rosters/suite_names.txt tasks/suite-roster
   SUITE_NAMES=$(< rosters/suite_names.txt)
 
@@ -11,11 +11,24 @@ if [ $PARALLEL == "yes" ]; then
     scripts/filefrom log/results/$f tasks/tests-ct $f
   done
 
+  FAILS=""
   for f in $SUITE_NAMES; do
-    test -f log/results/$f
-    tail -n 1 log/results/$f | grep -v failed
+    logfile=log/results/$f
+    test -f $logfile
+    if tail -n 1 $logfile | grep -q failed; then
+      FAILS="$FAILS $logfile"
+    fi
   done
+
+  if [ ! -z $FAILS ]; then
+    echo "Failing common test logs: " $FAILS
+    for f in $FAILS; do
+      echo $f
+    done
+    exit 1
+  fi
 else
+  set -ex
   PROJECT=ergo
   ergo-taskfile --requires tasks/rosters/suite_names.txt
   ergo-taskfile --produces tasks/rosters/suite_names.txt --task tasks/suite-roster
@@ -51,4 +64,3 @@ else
     -dir test -logdir logs \
     ${CT_OPTS}
 fi
-

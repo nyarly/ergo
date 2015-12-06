@@ -7,9 +7,6 @@ SUITE_NAME=${1:?$(ergo-task-invalid Missing argument 1 \(the suite to test\))}
 SUITE=${SUITE_NAME}_SUITE
 RESULTS=log/results/$SUITE_NAME
 
-#ergo-dep -af tasks/deps
-#ergo-dep -af tasks/build-ct-suites
-
 scripts/requires-all-compiled $0 "$@"
 scripts/filefrom ebin/${PROJECT}.app tasks/app
 scripts/filefrom test/${SUITE_NAME}_SUITE.beam tasks/build-ct-suite ${SUITE_NAME}
@@ -23,5 +20,8 @@ ct_run \
   -no_auto_compile -noshell \
   -pa $(realpath ebin) ${DEPS_DIR}/*/ebin \
   -dir test -logdir logs -suite $SUITE \
-  ${CT_OPTS:=} -erl_args -sname $SUITE_NAME | tee $RESULTS || echo "failed" >> $RESULTS
+  ${CT_OPTS:=} -erl_args -sname $SUITE_NAME | tee $RESULTS
 
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  echo "failed" >> $RESULTS
+fi

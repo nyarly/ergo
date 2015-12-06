@@ -1,0 +1,8 @@
+#!releases/ergo-0.1.0/bin/escript
+%%! -boot releases/ergo-0.1.0/bin/ergo
+
+main(Args) ->
+    process_flag(trap_exit, true),
+    {ok, WS, _WatchRef} = ergo:attach_workspace(),
+    {ok, Requirements} = ergo_cli:query(WS, "ergo-query", Args),
+    io:format("~s", [ [Req, "\n"] || Req <- Requirements ]).

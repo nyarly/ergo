@@ -6,8 +6,9 @@
 
 -export([build_state/1, products/2, dependencies/2, handle_build_list/2,
          remove_task/2, update_batch_id/1, absorb_task_batch/5,
-         handle_get_metadata/2, cleanup_state/1]).
--export([requirements_of_tasks/2, products_of_tasks/2, unproduced_requirements_of_tasks/2]).
+         handle_get_metadata/2, cleanup_state/1,
+         all_transitive_requirements/2, leaf_transitive_requirements/2
+        ]).
 
 -include("ergo_graphs.hrl").
 
@@ -477,6 +478,15 @@ handle_build_list(BaseState, Targets) ->
   State = load_from(BaseState),
   {State, run_build_list(State, targets_to_tasks(State, Targets))}.
 
+-spec(all_transitive_requirements(#state{}, [ergo:target()]) -> {#state{}, [ergo:produces()]}).
+all_transitive_requirements(State,Targets) ->
+  NewState = load_from(State),
+  {NewState, requirements_of_tasks(NewState, targets_to_tasks(NewState, Targets))}.
+
+-spec(leaf_transitive_requirements(#state{}, [ergo:target()]) -> {#state{}, [ergo:produces()]}).
+leaf_transitive_requirements(State,Targets) ->
+  NewState = load_from(State),
+  {NewState, unproduced_requirements_of_tasks(NewState, targets_to_tasks(NewState, Targets))}.
 
 targets_to_tasks(State, Targets) ->
   TasksList = tasks_from_targets(State, Targets),
@@ -509,19 +519,12 @@ also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov) ->
   AllVertices = tasknames_to_vertices(AlsoGraph, TargetTasks ++ Endorsers),
   vertices_to_tasknames(AlsoGraph, digraph_utils:reachable(AllVertices, AlsoGraph)).
 
-products_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
-  SeqGraph = seq_graph(State),
-  AlsoGraph = also_graph(State),
-
-  NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
-  ordsets:to_list(product_set_from_tasks(NeededTasknames, State)).
-
 requirements_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
   SeqGraph = seq_graph(State),
   AlsoGraph = also_graph(State),
 
   NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
-  ordsets:to_list(requirement_set_from_tasks(NeededTasknames, State)).
+  ordsets:to_list( requirement_set_from_tasks(NeededTasknames, State)).
 
 unproduced_requirements_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
   SeqGraph = seq_graph(State),
@@ -537,7 +540,10 @@ unproduced_requirements_of_tasks(State=#state{provenence=Prov}, TargetTasks) ->
 
 
 requirement_set_from_tasks(Tasknames, State) ->
-  ordsets:from_list(tasks_deps(State, Tasknames)).
+  ordsets:union(
+    ordsets:from_list(tasks_deps(State, Tasknames)),
+    ordsets:from_list([ binary_to_list(hd(Task)) || Task <- Tasknames ])
+   ).
 
 product_set_from_tasks(Tasknames, State) ->
   ordsets:from_list(tasks_products(State, Tasknames)).
@@ -1024,23 +1030,6 @@ digraph_test_() ->
      end,
      fun(State) ->
          {
-          "Task productions",
-          ?_test(begin
-                   process_task_batch(TaskName, [
-                                                 {prod, TaskName, ProductOne},
-                                                 {prod, TaskName, ProductTwo},
-                                                 {prod, OtherTaskName, ProductTwo},
-                                                 {prod, OtherTaskName, ProductThree}
-                                                ], true, State),
-                   ?assertEqual(
-                      lists:sort([ProductOne, ProductTwo, ProductThree]),
-                      lists:sort(products_of_tasks(State, [TaskName, OtherTaskName]))
-                     )
-                 end)
-         }
-     end,
-     fun(State) ->
-         {
           "Task requirements",
           ?_test(begin
                    process_task_batch(TaskName, [
@@ -1050,7 +1039,8 @@ digraph_test_() ->
                                                  {req, OtherTaskName, ProductThree}
                                                 ], true, State),
                    ?assertEqual(
-                      lists:sort([ProductOne, ProductTwo, ProductThree]),
+                      lists:sort([binary_to_list(hd(TaskName)), binary_to_list(hd(OtherTaskName)),
+                                  ProductOne, ProductTwo, ProductThree]),
                       lists:sort(requirements_of_tasks(State, [TaskName, OtherTaskName]))
                      )
                  end)
@@ -1067,7 +1057,7 @@ digraph_test_() ->
                                                  {prod, OtherTaskName, ProductThree}
                                                 ], true, State),
                    ?assertEqual(
-                      lists:sort([ProductOne]),
+                      lists:sort([binary_to_list(hd(TaskName)), binary_to_list(hd(OtherTaskName)), ProductOne]),
                       lists:sort(unproduced_requirements_of_tasks(State, [TaskName, OtherTaskName]))
                      )
                  end)

@@ -1,9 +1,10 @@
 -module(ergo_graphs).
 -behavior(gen_server).
 %% API
--export([start_link/1, get_products/2,get_dependencies/2,get_metadata/2, build_list/2,task_batch/5,task_invalid/3]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-  terminate/2, code_change/3]).
+-export([get_products/2,get_dependencies/2,get_metadata/2,
+         all_transitive_requirements/2, leaf_transitive_requirements/2,
+         build_list/2,task_batch/5,task_invalid/3]).
+-export([start_link/1, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(NOTEST, true).
 -ifdef(TEST).
@@ -30,6 +31,13 @@ get_dependencies(Workspace, Task) ->
 build_list(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {build_list, Targets}).
 
+-spec(all_transitive_requirements(ergo:workspace_name(), [ergo:target()]) -> [ergo:produces()]).
+all_transitive_requirements(Workspace, Targets) ->
+  gen_server:call(?VIA(Workspace), {all_transitive_requirements, Targets}).
+
+-spec(leaf_transitive_requirements(ergo:workspace_name(), [ergo:target()]) -> [ergo:produces()]).
+leaf_transitive_requirements(Workspace, Targets) ->
+  gen_server:call(?VIA(Workspace), {leaf_transitive_requirements, Targets}).
 
 -spec(get_metadata(ergo:workspace_name(), ergo:target()) -> [{atom(), term()}]).
 get_metadata(Workspace, Target) ->
@@ -73,6 +81,12 @@ handle_call({dependencies, Task}, _From, State) ->
 handle_call({build_list, Targets}, _From, State) ->
   {NewState, Result} = ergo_graph_db:handle_build_list(State,Targets),
   {reply, Result, NewState};
+handle_call({all_transitive_requirements, Targets}, _From, State) ->
+  {NewState, Result} = ergo_graph_db:all_transitive_requirements(State,Targets),
+  {reply, {ok, Result}, NewState};
+handle_call({leaf_transitive_requirements, Targets}, _From, State) ->
+  {NewState, Result} = ergo_graph_db:leaf_transitive_requirements(State,Targets),
+  {reply, {ok, Result}, NewState};
 handle_call({task_invalid, BuildId, Task}, _From, State) ->
   {reply, invalidate_task(BuildId, Task, State), State};
 handle_call({task_batch, BuildId, Task, Graph, Succeeded}, _From, OldState) ->

@@ -1,5 +1,5 @@
 -module (ergo_cli).
--export ([tasks/5, taskfile/5, files/5, invalid/5]).
+-export ([tasks/5, taskfile/5, files/5, invalid/5, query/3, query/4]).
 
 tasks(Workspace, ReporterId, CmdName, Ifs, CommandLine) ->
   command_parse( Ifs, CmdName, CommandLine, run_tasks(spec), run_tasks(usage),
@@ -25,9 +25,23 @@ invalid(Workspace, ReporterId, CmdName, Ifs, CommandLine) ->
                      run_invalid(Workspace, ReporterId, Options, Args)
                  end).
 
+query(Workspace, CmdName, CommandTokens) ->
+  command_parse( CmdName, CommandTokens, run_query(spec), run_query(usage),
+                 fun(Options, Args) ->
+                     run_query(Workspace, Options, Args)
+                 end).
+
+query(Workspace, CmdName, Ifs, CommandLine) ->
+  query(Workspace, CmdName, tokenize(CommandLine, Ifs)).
+
+tokenize(CommandLine, Ifs) ->
+  string:tokens(CommandLine, Ifs).
 
 command_parse(Ifs, CmdName, CommandLine, OptSpec, UsageExtra, Fun) ->
-  case ergo_getopt:parse([{help, $h, "help", boolean, "Print this help text"}| OptSpec], string:tokens(CommandLine, Ifs)) of
+  command_parse(CmdName, tokenize(CommandLine, Ifs), OptSpec, UsageExtra, Fun).
+
+command_parse(CmdName, CommandTokens, OptSpec, UsageExtra, Fun) ->
+  case ergo_getopt:parse([{help, $h, "help", boolean, "Print this help text"}| OptSpec], CommandTokens) of
     {ok, {Options, Args}} ->
       case proplists:get_bool(help, Options) of
         true ->
@@ -36,6 +50,28 @@ command_parse(Ifs, CmdName, CommandLine, OptSpec, UsageExtra, Fun) ->
       end;
     {error, _} -> {CmdTail, OptsTail} = UsageExtra, usage_string(CmdName, OptSpec, CmdTail, OptsTail)
   end.
+
+run_query(spec) ->
+  [
+   {type, $t, "type", atom, "Query type, required. Accepted values are \"all\" or \"leaf\""}
+  ];
+run_query(usage) ->
+  {
+   { "TARGET",
+     [{"TARGET", "all arguments are treated as a task or file target to query"}]
+   }
+  }.
+
+run_query(Workspace, Options, Args) ->
+  handle_query(Workspace, proplists:get_value(type, Options), [list_to_binary(Arg) || Arg <- Args]).
+
+handle_query(Workspace, all, Targets) ->
+  ergo_graphs:all_transitive_requirements(Workspace, [{task, Targets}]);
+handle_query(Workspace, leaves, Targets) ->
+  ergo_graphs:leaf_transitive_requirements(Workspace, [{task, Targets}]);
+handle_query(_, UnkType, _) ->
+  {error, {unknown_query_type, UnkType}}.
+
 
 run_tasks(spec) ->
   [

@@ -201,6 +201,22 @@ two_tasks(Config) ->
   {ok, {build_id, Id2}} = ergo:run_build(Workspace, [{task, [<<"tasks/two">>]}]),
   ergo_api:wait_on_build(Workspace, Id2),
   match_dir([proplists:get_value(priv_dir, Config), "two_tasks/result"], Workspace),
+  {ok, AllReqs} = ergo_cli:query(Workspace, <<"ergo-query">>, ["--type", "all", "tasks/two"]),
+  SortedAll = lists:sort(AllReqs),
+
+  ExpectedAll = lists:sort([
+                            "tasks/two", "tasks/one", "tasks/bootstrap", "in.txt", "middle.txt"
+                           ]),
+  ct:pal("Sorted all requirements: ~n~p~n~p", [SortedAll, ExpectedAll]),
+  ExpectedAll = SortedAll,
+
+  {ok, LeafReqs} = ergo_cli:query(Workspace, <<"ergo-query">>, ["--type=leaves", "tasks/two"]),
+  SortedLeaves = lists:sort(LeafReqs),
+  ExpectedLeaves = lists:sort([
+                               "tasks/two", "tasks/one","tasks/bootstrap","in.txt"
+                              ]),
+  ct:pal("Leaf reqs: ~n~p~n~p", [SortedLeaves,ExpectedLeaves]),
+  ExpectedLeaves = SortedLeaves,
 
   ok.
 
