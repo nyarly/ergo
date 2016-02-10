@@ -504,9 +504,10 @@ run_build_list(State=#state{provenence=Prov}, TargetTasks) ->
   NeededTasknames = also_tasks(AlsoGraph, SeqGraph, TargetTasks, Prov),
 
   SeqVs = digraph_utils:topsort(digraph_utils:subgraph(SeqGraph, tasknames_to_vertices(SeqGraph, NeededTasknames))),
-  Specs = [{taskname_from_vertex(SeqGraph, TV),
+  Specs = [ergo_runspec:item(
+             taskname_from_vertex(SeqGraph, TV),
             [taskname_from_vertex(SeqGraph, PredTask) || PredTask <- digraph_utils:reaching_neighbours([TV], SeqGraph)]
-           } || TV <- SeqVs ],
+                            ) || TV <- SeqVs ],
   digraph:delete(AlsoGraph), digraph:delete(SeqGraph),
   add_unknown_tasks(TargetTasks, Specs).
 
@@ -561,7 +562,7 @@ add_unknown_tasks([Task | Rest], Specs) ->
    ).
 
 maybe_add_task(Task, Specs, []) ->
-  [ {Task,[]} | Specs ];
+  [ ergo_runspec:item(Task,[]) | Specs ];
 maybe_add_task(_Task, Specs, _Matched) ->
   Specs.
 

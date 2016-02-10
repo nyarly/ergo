@@ -25,7 +25,7 @@ init_per_suite(Config) ->
   %{ok, _} = dbg:tpl(ergo_task, reparent_task, [{'_',[],[{return_trace}]}]),
   %{ok, _} = dbg:tpl(ergo_freshness, check, [{'_',[],[{return_trace}]}]),
 
-  %{ok, _} = dbg:tp(ergo_task_pool, []),
+  {ok, _} = dbg:tpl(ergo_task_pool, []),
   %{ok, _} = dbg:tpl(ergo_task, []),
   %{ok, _} = dbg:tpl(ergo_build, []),
   %{ok, _} = dbg:tpl(ergo_build,handle_event, [{['$1','$2'], [{'=/=', {'element', 1, '$1'}, task_produced_output}], []}]),

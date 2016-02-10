@@ -185,7 +185,7 @@ start_eligible_tasks(TaskList, State=#state{workspace_dir=WorkspaceDir, build_id
               end, State, TaskList).
 
 process_start_result(ok, Task, State=#state{build_spec=Spec}) ->
-  State#state{build_spec=remove_started_task(Task, Spec)};
+  State#state{build_spec=reduce_build_spec(Task, Spec)};
 process_start_result(_, _, State) ->
   State.
 
@@ -207,15 +207,10 @@ start_task(Workspace, BuildId, Task, Config, _) ->
 eligible_tasks(BuildSpec) ->
   [Task || {Task, []} <- BuildSpec].
 
-remove_started_task(_, out_of_date) ->
-  out_of_date;
-remove_started_task(Task, Spec) ->
-  [{TN, Deps} || {TN, Deps} <- Spec, TN =/=Task].
-
 reduce_build_spec(_, out_of_date) ->
   out_of_date;
 reduce_build_spec(Task, Spec) ->
-  [ {TN, Deps -- [Task]} || {TN, Deps} <- Spec, TN =/= Task].
+  ergo_runspec:reduce(Task, Spec).
 
 -ifdef(TEST).
 module_test_() ->
@@ -236,14 +231,6 @@ module_test_() ->
      {"Eligible tasks",
      ?_test(begin
               ?assertEqual([ready], eligible_tasks([{ready, []}, {not_ready, [ready]}, {also_not, [other]}]))
-       end)
-     }
-   end,
-   fun(State) ->
-     {"Remove started tasks",
-     ?_test(begin
-       ?assertEqual(remove_started_task(started, [{started, []}, {not_ready, [started]}]),
-                    [{not_ready, [started]}])
        end)
      }
    end,

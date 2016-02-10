@@ -65,9 +65,9 @@ sequencing and uses it to parallelize the build process.
 Often, only part of the sources of build will change, and the products related
 to the changed source files are the only ones which need to be reproduced.
 
-`ergo` determines this by tracking "digests" (which happens to be a hash of the 
-file contents) of the various files, and only running tasks whose products are 
-missing or where the digests don't match a known list. The result is much 
+`ergo` determines this by tracking "digests" (which happens to be a hash of the
+file contents) of the various files, and only running tasks whose products are
+missing or where the digests don't match a known list. The result is much
 reduced build times, since we simply skip unnecessary work.
 
 The source file for each task is a implicit requirement of the task when
@@ -92,6 +92,21 @@ can run builds automatically, and watch for changes to the source files during
 the build.
 
 ## Future Work
+
+The simplest, but still very useful tool ergo could provide would be a
+"standalone" tool - output a bash (or Powershell? or...) script that just sets
+up dummies for the ergo commands (etc.) and other build environment stuff, and
+then outputs exactly the commands to build the project without ergo. Maybe
+build all of this around some templating engine such that one could replace
+with likely target outputs. The idea would be to make ergo built projects
+independant of ergo for distribution.
+
+Conversely, working somehow with Makefiles would be a nice feature. I'm less
+clear on how this would work, although I know there are redo implementations
+that provide a Make multi-process UDP interface so that they can coexist with
+Makefiles. The ideal would be to somehow determine the Make deps, convert those
+into build graph statements, and then run Make tasks explicitly - ideally
+forcing them to run independantly.
 
 One of the original inspirations was the Google Cloud Build tool, which
 recognizes that not only are build tasks normally repeated on a single
@@ -133,9 +148,9 @@ considered by filesystem timestamp. This wouldn't be as robust as using file
 digests, and such files couldn't participate in the distributed build, but it
 would be much simpler to manage for the developer.
 
-Finally, there is a small part of the way tasks run that assumes a Unix-like 
-OS. I have doubts about whether it will work under Windows, but neither the 
-facilities or interest in confirming those doubts or supporting Windows 
+Finally, there is a small part of the way tasks run that assumes a Unix-like
+OS. I have doubts about whether it will work under Windows, but neither the
+facilities or interest in confirming those doubts or supporting Windows
 directly. I would welcome contribution along these lines, however.
 
 ## Related Work

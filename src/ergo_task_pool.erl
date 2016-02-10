@@ -35,7 +35,7 @@
          }).
 
 -record(state, {
-          worker_limit = 8 :: integer(),
+          worker_limit = 16 :: integer(),
           waiting :: queue:queue(#task{}),
           running :: dict:dict(pid(), #task{}),
           builds :: dict:dict(reference(), #build{}),
@@ -311,10 +311,10 @@ module_test_() ->
                                              end, State, lists:seq(1, State#state.worker_limit)),
                   QueuedState = queue_task(ATask, BusyState),
                   ?assertMatch({[], QueuedState}, pop_runnable_jobs(QueuedState)),
-                  ?assertEqual(8, count_running(Bid, QueuedState)),
+                  ?assertEqual(16, count_running(Bid, QueuedState)),
                   ?assertEqual(1, count_waiting(Bid, QueuedState)),
                   ?assertEqual(0, count_remaining(17, QueuedState)),
-                  ?assertEqual(9, count_remaining(Bid, QueuedState))
+                  ?assertEqual(17, count_remaining(Bid, QueuedState))
                 end)
         }
     end,

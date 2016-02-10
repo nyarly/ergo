@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -ex
 
+ergo-taskfile --produces rosters/source.txt
+
 mkdir -p rosters
 find src -name '*.erl' > rosters/source.txt
-
