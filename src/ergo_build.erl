@@ -148,64 +148,87 @@ handle_task_exited(_Task, {invalid, Message}, _, State=#state{workspace_dir=WS, 
 handle_task_exited(Task,  _, Remaining, State) ->
   task_completed(Task, Remaining, State).
 
-task_completed(Task, Waiting, State = #state{build_spec=BSpec, run_counts= RunCounts, complete_tasks=CompleteTasks}) ->
+task_completed(Task, Waiting, State = #state{build_spec=BSpec, complete_tasks=CompleteTasks}) ->
   start_tasks(Waiting, State#state{
                          build_spec=reduce_build_spec(Task, BSpec),
-                         complete_tasks=[Task | CompleteTasks],
-                         run_counts=dict:store(Task, run_count(Task, RunCounts) + 1, RunCounts)
+                         complete_tasks=[Task | CompleteTasks]
                         }).
 
 -spec(start_tasks(integer(), #state{}) -> ok | {err, term()}).
-start_tasks(0, State=#state{workspace_dir=WorkspaceDir, build_spec=[], build_id=BuildId}) ->
+start_tasks(0, State=#state{build_spec=[], workspace_dir=WorkspaceDir, build_id=BuildId}) ->
   build_completed(WorkspaceDir, BuildId, true, {}),
   State;
 start_tasks(_, State=#state{build_spec=[]}) ->
   State;
+
 start_tasks(0, State=#state{build_spec=out_of_date, workspace_dir=Workspace, requested_targets=Targets}) ->
   BuildSpec=ergo_graphs:build_list(Workspace, Targets),
-  NewState = State#state{complete_tasks=[],build_spec=BuildSpec},
-  start_tasks(0, NewState);
+  start_tasks(0, State#state{complete_tasks=[],build_spec=BuildSpec});
 start_tasks(_, State=#state{build_spec=out_of_date}) ->
   State;
 
-start_tasks(_, State=#state{build_spec=BuildSpec}) ->
-  Eligible = eligible_tasks(BuildSpec),
-  start_eligible_tasks(Eligible, State).
+start_tasks(_, State) ->
+  begin_task_generation(State).
 
-start_eligible_tasks([], State=#state{build_spec=[]}) ->
-  State;
-start_eligible_tasks([], State) ->
-  State;
-start_eligible_tasks(TaskList, State=#state{workspace_dir=WorkspaceDir, build_id=BuildId, config=Config, run_counts=RunCounts}) ->
-  ergo_events:task_generation(WorkspaceDir, BuildId, TaskList),
-  lists:foldl(fun(Task, St) ->
-                  process_start_result(
-                    start_task(WorkspaceDir, BuildId, Task, Config, run_count(Task, RunCounts)),
-                    Task, St)
-              end, State, TaskList).
 
-process_start_result(ok, Task, State=#state{build_spec=Spec}) ->
-  State#state{build_spec=reduce_build_spec(Task, Spec)};
-process_start_result(_, _, State) ->
+begin_task_generation(State=#state{build_spec=[]}) ->
+  State;
+begin_task_generation(State=#state{workspace_dir=WS, build_id=Bid, build_spec=BuildSpec}) ->
+  {Eligible, NewSpec} = ergo_runspec:eligible_batch(BuildSpec),
+  ergo_events:task_generation(WS, Bid, Eligible),
+  start_eligible_tasks(Eligible, State#state{build_spec=NewSpec}).
+
+start_eligible_tasks(TL, State=#state{workspace_dir=WS, build_spec=RunSpec}) ->
+  {Elided, Runnable} = lists:partition(fun(Task) -> elidible_task(WS, Task) end, TL),
+  maybe_report_elided(Elided, State),
+  start_unelided_tasks(Runnable, State#state{build_spec=reduce_elided(Elided, RunSpec)}).
+
+start_unelided_tasks([], State) ->
+  begin_task_generation(State);
+start_unelided_tasks(TL, State) ->
+  {MaxCount, NewState} = lists:foldl(fun update_runcount/2, {0, State}, TL),
+  start_ready_tasks(MaxCount, TL, NewState).
+
+start_ready_tasks(MaxCount, _, State=#state{workspace_dir=WS, build_id=Bid}) when MaxCount >= ?RUN_LIMIT ->
+  build_completed(WS, Bid, false, {err, too_many_repetitions}), State;
+start_ready_tasks(_, TL, State=#state{workspace_dir=WS, build_id=Bid, config=Cfg}) ->
+  lists:foreach(fun(Task) -> start_task(WS, Bid, Task, Cfg) end, TL),
   State.
 
-
-
-run_count(Task, RunCounts) ->
-  case dict:find(Task, RunCounts) of
-    {ok, Count} -> Count;
-    error -> 0
-  end.
-
-start_task(Workspace, BuildId, Task, _, RunCounts) when RunCounts >= ?RUN_LIMIT ->
-  Error={too_many_repetitions, Task, RunCounts, ?RUN_LIMIT},
-  ergo_events:task_failed(Workspace, BuildId, {task, Task}, Error, []),
-  {err, Error};
-start_task(Workspace, BuildId, Task, Config, _) ->
+start_task(Workspace, BuildId, Task, Config) ->
   ergo_task_pool:start_task(Workspace, BuildId, Task, Config).
 
-eligible_tasks(BuildSpec) ->
-  [Task || {Task, []} <- BuildSpec].
+elidible_task(WS, Task) ->
+  case ergo_freshness:check(WS, Task) of
+    hit -> true;
+    _ -> false
+  end.
+
+maybe_report_elided([], _) ->
+  ok;
+maybe_report_elided(Elided, #state{workspace_dir=WS, build_id=Bid}) ->
+  ergo_events:tasks_elided(WS, Bid, Elided).
+
+reduce_elided(Tasks, Spec) ->
+  lists:foldl(fun reduce_build_spec/2, Spec, Tasks).
+
+update_runcount(Task, {Max, State=#state{run_counts=RCs}}) ->
+  Count = case dict:find(Task, RCs) of
+            {ok, Val} -> Val;
+            error -> 0
+          end,
+  maybe_report_repetitions(Count, Task, State),
+  {maxof(Max, Count), State#state{run_counts=dict:store(Task, Count + 1, RCs)}}.
+
+maybe_report_repetitions(Count, Task, #state{workspace_dir=WS, build_id=Bid}) when Count > ?RUN_LIMIT ->
+  ergo_events:task_failed(WS, Bid, {task, Task}, {too_many_repetitions, Task, Count, ?RUN_LIMIT}, []);
+maybe_report_repetitions(_, _, _) ->
+  ok.
+
+maxof(X, Y) when X > Y ->
+  X;
+maxof(_, Y) ->
+  Y.
 
 reduce_build_spec(_, out_of_date) ->
   out_of_date;
@@ -228,15 +251,6 @@ module_test_() ->
   end,
   [
    fun(_) ->
-     {"Eligible tasks",
-     ?_test(begin
-              ?assertEqual([ready], eligible_tasks([{ready, []}, {not_ready, [ready]}, {also_not, [other]}]))
-       end)
-     }
-   end,
-
-
-   fun(_) ->
      {"Spec reduction should handle out_of_date spec",
      ?_test(begin
               ?assertEqual(out_of_date, reduce_build_spec(any_task, out_of_date))
@@ -247,7 +261,7 @@ module_test_() ->
        {"Spec reduction should remove a completed task",
         ?_test(begin
                  Reduced = reduce_build_spec(done_task, [{done_task, []}, {other_task, [done_task]}, {last_task, [other_task, done_task]}]),
-                 ?assertMatch( Reduced, [{other_task, []}, {last_task, [other_task]}])
+                 ?assertMatch( [{done_task, []}, {other_task, []}, {last_task, [other_task]}], Reduced )
                end)
        }
    end

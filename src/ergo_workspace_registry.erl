@@ -10,7 +10,7 @@
 -type(roletype() :: supervisor | build | server | graph | events | task).
 -define(SERVER, ?MODULE).
 -record(state, {item_index::integer(), registry}).
--record(registry_key, {workspace::binary(),role::roletype(),name::term()}).
+-record(registry_key, {workspace::ergo:workspace_name(),role::roletype(),name::term()}).
 -record(registration, {
           key    :: #registry_key{} | '_',
           pid    :: pid()           | '_',

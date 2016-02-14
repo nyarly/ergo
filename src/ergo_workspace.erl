@@ -22,7 +22,7 @@ start_link(WorkspaceDir) ->
 start_build(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {start_build, {Targets}}).
 
--spec(find_dir(filename:all()) -> ergo:workspace_name() | no_workspace | {error, term()}).
+-spec(find_dir(file:filename_all()) -> ergo:workspace_name() | no_workspace | {error, term()}).
 find_dir(Path="/") ->
   case ergo_dir(Path) of
     no -> no_workspace;
@@ -35,7 +35,7 @@ find_dir(Path) ->
   end.
 
 
--spec(setup(filename:all()) -> ok | {error, term()}).
+-spec(setup(file:filename_all()) -> ok | {error, term()}).
 setup(Pwd) ->
   setup_ergo_in(Pwd).
 

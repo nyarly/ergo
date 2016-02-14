@@ -85,8 +85,9 @@ run_tasks(usage) ->
    [{"TASK", "all arguments are treated as the task to run"}]}.
 run_tasks(Workspace, ReporterId, Options, Args) ->
   SecondTask = [ list_to_binary(Part) || Part <- Args],
-  maybe_cotasks(proplists:get_bool(also,  Options), proplists:get_bool('when',  Options), Workspace, ReporterId, self, SecondTask),
-  maybe_deps(proplists:get_bool(preceed,  Options), proplists:get_bool(follow,  Options),Workspace, ReporterId, self, SecondTask).
+  {ok, CT} = maybe_cotasks(proplists:get_bool(also,  Options), proplists:get_bool('when',  Options), Workspace, ReporterId, self, SecondTask),
+  {ok, TD} = maybe_deps(proplists:get_bool(preceed,  Options), proplists:get_bool(follow,  Options),Workspace, ReporterId, self, SecondTask),
+  {ok, {CT, TD}}.
 
 run_taskfile(spec) ->
   [
@@ -119,6 +120,7 @@ run_files(Workspace, ReporterId, [], [FirstFile, SecondFile]) ->
   ergo_api:add_file_dep(Workspace, ReporterId, FirstFile, SecondFile).
 
 %          preceed,follow
+-spec(maybe_deps(Preceed::boolean(), Follow::boolean(), ergo:workspace_name(), ergo:taskname(), ergo_task:name(), ergo_task:name()) -> ergo:result()).
 maybe_deps(true,true,_,_,_,_) ->
   {error, contradictory_preceed_follow};
 maybe_deps(true,_,Workspace,Reporter,First,Second) ->
@@ -126,18 +128,21 @@ maybe_deps(true,_,Workspace,Reporter,First,Second) ->
 maybe_deps(_,true,Workspace,Reporter,First,Second) ->
   ergo_api:add_task_seq(Workspace,Reporter,Second,First);
 maybe_deps(_,_,_,_,_,_) ->
-  ok.
+  {ok, no_deps}.
 
 %             also,when
+% -spec maybe_cotasks(Also::boolean(), When::boolean(),ergo:workspace_name(), ergo:taskname(),'self',[binary()]) -> any().
+-spec maybe_cotasks(Also::boolean(), When::boolean(),ergo:workspace_name(), ergo:taskname(),ergo_task:name(),ergo_task:name()) -> ergo:result().
 maybe_cotasks(true,true,Workspace,Reporter,First,Second) ->
-  ergo_api:add_cotask(Workspace,Reporter,First,Second),
-  ergo_api:add_cotask(Workspace,Reporter,Second,First);
+  {ok, FS} = ergo_api:add_cotask(Workspace,Reporter,First,Second),
+  {ok, SF} = ergo_api:add_cotask(Workspace,Reporter,Second,First),
+  {ok, {FS, SF}};
 maybe_cotasks(false,true,Workspace,Reporter,First,Second) ->
   ergo_api:add_cotask(Workspace,Reporter,Second,First);
 maybe_cotasks(true,false,Workspace,Reporter,First,Second) ->
   ergo_api:add_cotask(Workspace,Reporter,First,Second);
 maybe_cotasks(_,_,_,_,_,_) ->
-  ok.
+  {ok, no_cotasks}.
 
 %             require,produce
 maybe_filedep(true,true,_,_,_,_) ->

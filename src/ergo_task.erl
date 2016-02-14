@@ -18,11 +18,14 @@
 -define(ERGO_TASK_ENV, "ERGO_TASK_ID").
 
 -type outcome() :: success | skipped | {invalid, term()} | {failed, term(), string()}.
+-type name() :: ergo:taskname() | self.
+
+-export_type([outcome/0, name/0]).
 
 -record(state, {
           workspace,
-          build_workspace,
-          build_id,
+          build_workspace :: ergo:workspace_name(),
+          build_id :: ergo:build_id(),
           name,
           build_name,
           config,
@@ -54,31 +57,31 @@ taskname_from_token(TaskId) ->
 taskname_from_registration({_Workspace, task, TaskName}) -> TaskName;
 taskname_from_registration(Err) -> {no_task, Err}.
 
--spec(add_dep(ergo:workspace_name(), ergo:taskname(), ergo:productname(), ergo:productname()) -> ok).
+-spec(add_dep(ergo:workspace_name(), ergo:taskname(), ergo:productname(), ergo:productname()) -> ergo:result()).
 add_dep(Workspace, Taskname, From, To) ->
   gen_server:call(?VT(Workspace, Taskname), {add_dep, From, To}).
 
--spec(add_prod(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:productname()) -> ok).
+-spec(add_prod(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:productname()) -> ergo:result()).
 add_prod(Workspace, Taskname, From, To) ->
   gen_server:call(?VT(Workspace, Taskname), {add_prod, From, To}).
 
--spec(add_req(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:productname()) -> ok).
+-spec(add_req(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:productname()) -> ergo:result()).
 add_req(Workspace, Taskname, From, To) ->
   gen_server:call(?VT(Workspace, Taskname), {add_req, From, To}).
 
--spec(add_co(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:taskname()) -> ok).
+-spec(add_co(ergo:workspace_name(), ergo:taskname(), name(), name()) -> ergo:result()).
 add_co(Workspace, Taskname, From, To) ->
   gen_server:call(?VT(Workspace, Taskname), {add_co, From, To}).
 
--spec(add_seq(ergo:workspace_name(), ergo:taskname(), ergo:taskname(), ergo:taskname()) -> ok).
+-spec(add_seq(ergo:workspace_name(), ergo:taskname(), name(), name()) -> ergo:result()).
 add_seq(Workspace, Taskname, From, To) ->
   gen_server:call(?VT(Workspace, Taskname), {add_seq, From, To}).
 
--spec(skip(ergo:workspace_name(), ergo:taskname()) -> ok).
+-spec(skip(ergo:workspace_name(), ergo:taskname()) -> ergo:result()).
 skip(Workspace, Taskname) ->
   gen_server:call(?VT(Workspace, Taskname), {skip}).
 
--spec(invalid(ergo:workspace_name(), ergo:taskname(), string()) -> ok).
+-spec(invalid(ergo:workspace_name(), ergo:taskname(), string()) -> ergo:result()).
 invalid(Workspace, Taskname, Message) ->
   gen_server:call(?VT(Workspace, Taskname), {invalid, Message}).
 
@@ -96,20 +99,20 @@ init({BaseTaskName, BuildWorkspaceDir, BuildId, Config}) ->
 handle_call(task_name, _From, State) ->
   {reply, State#state.name, State};
 handle_call({add_dep, From, To}, _From, State) ->
-  {reply, ok, add_item(State, {dep, From, To})};
+  {reply, {ok, added}, add_item(State, {dep, From, To})};
 handle_call({add_prod, Task, Prod}, _From, State) ->
-  {reply, ok, add_item(State, {prod, Task, Prod})};
+  {reply, {ok, added}, add_item(State, {prod, Task, Prod})};
 handle_call({add_req, Task, Prod}, _From, State) ->
-  {reply, ok, add_item(State, {req, Task, Prod})};
+  {reply, {ok, added}, add_item(State, {req, Task, Prod})};
 handle_call({add_co, From, To}, _From, State) ->
-  {reply, ok, add_item(State, {co, From, To})};
+  {reply, {ok, added}, add_item(State, {co, From, To})};
 handle_call({add_seq, From, To}, _From, State) ->
-  {reply, ok, add_item(State, {seq, From, To})};
+  {reply, {ok, added}, add_item(State, {seq, From, To})};
 handle_call({skip}, _From, State) ->
   NewState = skipped(State),
-  {reply, ok, NewState};
+  {reply, {ok, skipping}, NewState};
 handle_call({invalid, Message}, _, State) ->
-  {reply, ok, become_invalid(Message, State)};
+  {reply, {ok, invalidating}, become_invalid(Message, State)};
 handle_call(_Request, _From, State) ->
   Reply = ok,
   {reply, Reply, State}.
@@ -157,14 +160,15 @@ handle_task_executable(Error) ->
 
 
 -record(launch, {
-          fullexe,
-          relname,
-          args,
-          fresh
+          fullexe :: tuple()    | binary()   | undefined,
+          relname :: binary()   | undefined,
+          args    :: [binary()] | undefined,
+          fresh   :: hit        | miss       | undefined
          }).
 
 handle_begin_task(State) ->
   handle_begin_task(#launch{}, State).
+
 
 handle_begin_task(#launch{fullexe={error, Error}}, State) ->
   report_invalid(Error, State),
@@ -207,9 +211,7 @@ process_launch_result(State=#state{build_workspace=WS, build_id=Bid, build_name=
   ergo_events:task_running(WS, Bid, Name),
   {noreply, State};
 process_launch_result(skipped) ->
-  {stop, normal, #state{}};
-process_launch_result(Reason) ->
-  {stop, Reason, #state{}}.
+  {stop, normal, #state{}}.
 
 
 
@@ -290,6 +292,7 @@ reparent_item(Dir, {req, First, Second})  -> {req,  reparent_taskname(Dir, First
 reparent_item(Dir, {co, First, Second})   -> {co,   reparent_taskname(Dir, First), reparent_taskname(Dir, Second)};
 reparent_item(Dir, {seq, First, Second})  -> {seq,  reparent_taskname(Dir, First), reparent_taskname(Dir, Second)}.
 
+-spec(unself_item(name(), tuple()) -> ergo:graph_item()).
 unself_item(Taskname, {prod, self, Second}) -> {prod, Taskname, Second};
 unself_item(Taskname, {req, self, Second} ) -> {req, Taskname, Second} ;
 unself_item(Taskname, {co, self, Second}  ) -> unself_item(Taskname,{co, Taskname, Second})  ;
@@ -322,7 +325,7 @@ relpath(From, To) ->
   {err, {not_under, From, To}}.
 
 
--spec(record_batch(ok | term(), #state{}) -> outcome()).
+-spec(record_batch(ok | {err, term()} | {exit_status, term()}, #state{}) -> ok).
 record_batch(_, #state{invalid=true}) ->
   ok;
 record_batch(_, #state{skipped=true}) ->

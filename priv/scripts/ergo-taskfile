@@ -21,4 +21,3 @@ if [ "$SEP" = "none" ]; then
 fi
 
 ${ERL_CALL} -h "${ERGO_TASK_ID}" -a "ergo_cli taskfile [\"${ERGO_WORKSPACE}\", \"${ERGO_TASK_ID}\", \"${0}\", \"${sep}\", \"$(IFS=$sep;echo "${*}")\"]" -name ${ERGO_NODE}
-echo taskfile

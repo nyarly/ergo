@@ -13,11 +13,13 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 
+-include("ergo_graphs.hrl").
+-export_type([change_status/0]).
+
 -define(VIA(WorkspaceName), {via, ergo_workspace_registry, {WorkspaceName, graph, only}}).
 start_link(Workspace) ->
   gen_server:start_link({via, ergo_workspace_registry, {Workspace, graph, only}}, ?MODULE, [Workspace], []).
 
--include("ergo_graphs.hrl").
 
 -spec(get_products(ergo:workspace_name(), ergo:task()) -> [ergo:productname()]).
 get_products(Workspace, Task) ->
@@ -31,11 +33,11 @@ get_dependencies(Workspace, Task) ->
 build_list(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {build_list, Targets}).
 
--spec(all_transitive_requirements(ergo:workspace_name(), [ergo:target()]) -> [ergo:produces()]).
+-spec(all_transitive_requirements(ergo:workspace_name(), [ergo:target()]) -> [ergo:produced()]).
 all_transitive_requirements(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {all_transitive_requirements, Targets}).
 
--spec(leaf_transitive_requirements(ergo:workspace_name(), [ergo:target()]) -> [ergo:produces()]).
+-spec(leaf_transitive_requirements(ergo:workspace_name(), [ergo:target()]) -> [ergo:produced()]).
 leaf_transitive_requirements(Workspace, Targets) ->
   gen_server:call(?VIA(Workspace), {leaf_transitive_requirements, Targets}).
 
@@ -49,7 +51,7 @@ get_metadata(Workspace, Target) ->
 %% @end
 
 %% XXX change boolean "Succeeded" to atoms - Result: succees|failure
--spec(task_batch(ergo:workspace_name(), ergo:build_id(), ergo:taskname(),Graph::ergo:graph_item(), boolean()) -> {ok, changed|no_change}).
+-spec(task_batch(ergo:workspace_name(), ergo:build_id(), ergo:taskname(),Graph::[ergo:graph_item()], Succeeded::boolean()) -> change_report()).
 task_batch(Workspace, BuildId, Task, Graph, Succeeded) ->
   gen_server:call(?VIA(Workspace), {task_batch, BuildId, Task, Graph, Succeeded}).
 
@@ -119,6 +121,6 @@ invalidate_task(BuildId, Task, State) ->
 report_invalid_provenences(EPs, Task, BuildId, #state{workspace=Workspace}) ->
   [report_invalid_provenence(Workspace, BuildId, Task, EP) || EP <- EPs].
 
--spec(report_invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), {edge_record(), #provenence{}}) -> ok).
+-spec(report_invalid_provenence(ergo:workspace_name(), ergo:build_id(), ergo:taskname(), {ergo:graph_item(), ergo:taskname()}) -> ok).
 report_invalid_provenence(Workspace, BuildId, About, {Statement, Asserter}) ->
   ergo_events:invalid_provenence(Workspace, BuildId, About, Asserter, Statement).

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -ex
+
+ergo-taskfile --produces ergo.plt
+
+if [ -f ergo.plt ]; then
+  exit 0
+fi
+
+dialyzer --build_plt --output_plt ergo.plt --apps erts kernel stdlib eunit crypto mnesia

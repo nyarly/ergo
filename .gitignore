@@ -15,3 +15,4 @@ test/ergo_freshness_SUITE_data/config/ergo_mnesia/
 rosters/
 log/
 old-logs/
+dialyzer.err

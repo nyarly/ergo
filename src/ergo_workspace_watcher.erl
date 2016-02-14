@@ -17,6 +17,7 @@
           build_completed        = report,
           build_task_done        = report,
           task_generation        = report,
+          tasks_elided           = report,
            task_init             = silent,
            task_started          = silent,
           task_running           = report,
@@ -110,6 +111,7 @@ tagged_event(_, Event, #state{build_start=silent})           when element(1, Eve
 tagged_event(_, Event, #state{build_completed=silent})       when element(1, Event) =:= build_completed       -> ok;
 tagged_event(_, Event, #state{task_init=silent})             when element(1, Event) =:= task_init             -> ok;
 tagged_event(_, Event, #state{task_generation=silent})       when element(1, Event) =:= task_generation       -> ok;
+tagged_event(_, Event, #state{tasks_elided=silent})          when element(1, Event) =:= task_elided           -> ok;
 tagged_event(_, Event, #state{task_started=silent})          when element(1, Event) =:= task_started          -> ok;
 tagged_event(_, Event, #state{task_running=silent})          when element(1, Event) =:= task_running          -> ok;
 tagged_event(_, Event, #state{task_completed=silent})        when element(1, Event) =:= task_completed        -> ok;
@@ -149,6 +151,9 @@ tagged_event(TagString, {task_init, Bid, {task, TaskName}}, #state{task_init=rep
 
 tagged_event(TagString, {task_generation, Bid, Tasklist}, #state{task_generation=report}) ->
   io:format("~s(ergo:~p): new task generation: ~s ~n", [TagString, Bid, join_iolist([join_iolist(Task," ") || Task <- Tasklist],", ")]);
+
+tagged_event(TagString, {tasks_elided, Bid, Tasklist}, #state{tasks_elided=report}) ->
+  io:format("~s(ergo:~p): tasks elided: ~s ~n", [TagString, Bid, join_iolist([join_iolist(Task," ") || Task <- Tasklist],", ")]);
 
 tagged_event(TagString, {task_started, Bid, {task, TaskName}}, #state{task_started=report}) ->
   build_tagged_message(TagString, Bid, [<<"start: ">>, ?tn(TaskName)]);

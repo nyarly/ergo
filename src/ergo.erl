@@ -1,7 +1,7 @@
 -module(ergo).
 -export_type([produced/0, task/0, taskname/0, productname/0, taskspec/0,
               build_spec/0, target/0, command_result/0, graph_item/0,
-              workspace_name/0, build_id/0]).
+              workspace_name/0, build_id/0, result/0]).
 
 -export([
          setup/1,
@@ -34,8 +34,9 @@
 
 -type workspace_name() :: binary().
 
--type command_response() :: {ok, term()}.
 %-type query_response() :: ok.
+
+-type result() :: {ok, term()} | {error, term()}.
 
 setup(Dir) ->
   ergo_workspace:setup(Dir).
@@ -54,13 +55,13 @@ find_workspace() ->
 find_workspace(Dir) ->
   ergo_workspace:find_dir(Dir).
 
--spec(watch(workspace_name()) -> command_response()).
+-spec(watch(workspace_name()) -> result()).
 watch(Workspace) ->
   {ok, _Pid} = ergo_sup:start_workspace(Workspace),
   {ergo_workspace_watcher, Ref} = ergo_workspace_watcher:ensure_added(Workspace),
   {ok, Ref}.
 
--spec(run_build(workspace_name(), [target()]) -> command_response()).
+-spec(run_build(workspace_name(), [target()]) -> ok).
 run_build(Workspace, Targets) ->
   {ok, _Pid} = ergo_sup:start_workspace(Workspace),
   ergo_workspace:start_build(Workspace, Targets).

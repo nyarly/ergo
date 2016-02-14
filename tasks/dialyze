@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -ex
+
+scripts/ergo-filefrom ergo.plt tasks/dialyzer_plt
+ergo-taskfile --produces dialyzer.err
+set -o pipefail
+dialyzer --plt ergo.plt --fullpath --no_native --src -r src -Werror_handling -Wrace_conditions -Wunmatched_returns | tee dialyzer.err
+# -Wunderspecs

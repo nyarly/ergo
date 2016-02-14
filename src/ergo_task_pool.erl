@@ -55,7 +55,7 @@ scrub_build() ->
 start_task(WS, Bid, Task, Config) ->
   gen_server:call(?SERVER, {start_task, WS, Bid, Task, Config}).
 
--spec(task_concluded(ergo_graph:change_status(), ergo_task:outcome()) -> ok).
+-spec(task_concluded(ergo_graphs:change_status(), ergo_task:outcome()) -> ok).
 task_concluded(GraphChange, Outcome) ->
   gen_server:call(?SERVER, {task_concluded, GraphChange, Outcome}).
 

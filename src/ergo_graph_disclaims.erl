@@ -10,7 +10,8 @@
 
 -export([resolve/2]).
 
--type report() :: {disclaim, {prod, ergo:taskname(), ergo:product()}, [ergo:taskname()]}.
+-type report() :: {disclaim, {prod, ergo:taskname(), ergo:productname()}, [ergo:taskname()]}.
+-export_type [report/0].
 
 resolve(TaskName, State) ->
   Disclaimers = check(TaskName, State),
@@ -52,7 +53,7 @@ map_to_list(Fun, Dict) ->
                 [Fun(Key, Value) | List]
             end, [], Dict).
 
--spec(format_disclaimer(ergo:taskname(), ergo:product(), [ergo:taskname()]) -> report()).
+-spec(format_disclaimer(ergo:taskname(), ergo:productname(), [ergo:taskname()]) -> report()).
 format_disclaimer(TaskName, Product, Liars) -> {disclaim, {prod, TaskName, Product}, Liars}.
 
 %%% Tests

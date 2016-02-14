@@ -10,7 +10,7 @@
 -module(ergo_events).
 
 -export([build_requested/2, build_start/3, build_completed/4, build_warning/3, build_notes_task_complete/5,
-         requirement_noted/3, production_noted/3, disclaimed_production/4, task_generation/3,
+         requirement_noted/3, production_noted/3, disclaimed_production/4, task_generation/3, tasks_elided/3,
          graph_changed/1, graph_contradiction/4, task_init/3, task_started/3, task_running/3,
          task_produced_output/4, task_failed/5, invalid_provenence/5,
          task_completed/3, task_changed_graph/3, task_skipped/3,
@@ -41,6 +41,9 @@ build_notes_task_complete(Workspace, BuildId, Taskname, Started, Completed) ->
 
 task_generation(Workspace, BuildId, TaskList) ->
   send_event(Workspace, {task_generation, BuildId, TaskList}).
+
+tasks_elided(Workspace, BuildId, TaskList) ->
+  send_event(Workspace, {tasks_elided, BuildId, TaskList}).
 
 -spec(requirement_noted(ergo:workspace_name(), ergo:produced(), ergo:produced()) -> ok).
 requirement_noted(Workspace, Product, Dependency) ->
@@ -76,7 +79,7 @@ task_init(Workspace, BuildId, Task) ->
 task_started(Workspace, BuildId, Task) ->
   send_event(Workspace, {task_started, BuildId, Task}).
 
--spec(task_running(ergo:workspace_name(), ergo:build_id(), ergo:task()) -> ok).
+-spec(task_running(ergo:workspace_name(), ergo:build_id(), ergo:taskname()) -> ok).
 task_running(Workspace, BuildId, Task) ->
   send_event(Workspace, {task_running, BuildId, Task}).
 

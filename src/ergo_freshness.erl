@@ -37,7 +37,11 @@ task_products(Workspace, Task) ->
   ergo_graphs:get_products(Workspace, {task, Task}).
 
 
--spec(check(ergo:workspace_name(), ergo:taskname(), [file:name_all()], [file:name_all()]) -> hit | miss).
+-spec check(
+        ergo:workspace_name(),
+        ergo:taskname(),
+        Deps::[file:name_all()],
+        Prods::[file:name_all()]) -> hit | miss .
 check(Root, Task, Deps, Prods) ->
   check(freshness_policy(Root, Task, Deps, Prods),
         Root, Task, Deps, Prods).
@@ -55,7 +59,13 @@ freshness_policy(Root, Task, Deps, Prods) ->
 -type file_policy() :: policy().
 -type task_policy() :: digest.
 
--spec(freshness_policy(ergo:workspace_name(), ergo:taskname(), [file:name_all()], [file:name_all()], file_policy(), task_policy()) -> policy()).
+-spec freshness_policy(
+        ergo:workspace_name(),
+        ergo:taskname(),
+        Deps::[file:name_all()],
+        Prods::[file:name_all()],
+        file_policy(),
+        task_policy()) -> policy().
 %freshness_policy(_, _, _, _, _, never) ->
 %  never;
 freshness_policy(_, _, [], [], _, digest) ->
@@ -80,6 +90,8 @@ store(Root, Task, Deps, Prods) ->
 
 %check(never, _,_,_,_) ->
 %  miss;
+check(digest, _, _, [], _) ->
+  miss;
 check(digest, Root, Task, Deps, Prods) ->
   {atomic, Matches} =
   mnesia:transaction(

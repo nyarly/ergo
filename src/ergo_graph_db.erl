@@ -185,6 +185,7 @@ update_batch_id(State=#state{vertices=VerTab}) ->
 maybe_notify_changed(Changed, BuildId, Taskname, State) ->
   maybe_notify_changed(#batch_status{changed=Changed, build_id=BuildId, taskname=Taskname, state=State}).
 
+-spec maybe_notify_changed(#batch_status{}) -> change_report().
 maybe_notify_changed(#batch_status{changed=false}) ->
   {ok, no_change};
 
@@ -478,12 +479,12 @@ handle_build_list(BaseState, Targets) ->
   State = load_from(BaseState),
   {State, run_build_list(State, targets_to_tasks(State, Targets))}.
 
--spec(all_transitive_requirements(#state{}, [ergo:target()]) -> {#state{}, [ergo:produces()]}).
+-spec(all_transitive_requirements(#state{}, [ergo:target()]) -> {#state{}, [ergo:produced()]}).
 all_transitive_requirements(State,Targets) ->
   NewState = load_from(State),
   {NewState, requirements_of_tasks(NewState, targets_to_tasks(NewState, Targets))}.
 
--spec(leaf_transitive_requirements(#state{}, [ergo:target()]) -> {#state{}, [ergo:produces()]}).
+-spec(leaf_transitive_requirements(#state{}, [ergo:target()]) -> {#state{}, [ergo:produced()]}).
 leaf_transitive_requirements(State,Targets) ->
   NewState = load_from(State),
   {NewState, unproduced_requirements_of_tasks(NewState, targets_to_tasks(NewState, Targets))}.
